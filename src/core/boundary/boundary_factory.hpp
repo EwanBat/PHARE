@@ -32,7 +32,7 @@ concept IsMHDQuantity = std::same_as<T, MHDQuantity>;
  *
  * @tparam GridLayoutT The type for the grid layout.
  */
-template<typename GridLayoutT, IsField FieldT>
+template<typename GridLayoutT, IsField FieldT, typename ParticleArrayT = void>
 class BoundaryFactory
 {
 public:
@@ -58,16 +58,19 @@ public:
      * @param vectors Vector quantities for which it is necessary to register a field boundary
      *                condition.
      * @param gamma Heat capacity ratio, used to compute the inflow total energy.
+     * @param populationNames Names of the ion populations for which it is necessary to register
+     *                        a particle boundary condition.
      *
      * @return A unique pointer to the created @c Boundary object.
      */
     static boundary_ptr_type create(BoundaryLocation location, initializer::PHAREDict const& dict,
                                     scalar_quantity_list_type const& scalars,
                                     vector_quantity_list_type const& vectors,
-                                    double const gamma = 0.0)
+                                    double const gamma                              = 0.0,
+                                    std::vector<std::string> const& populationNames = {})
     {
         BoundaryType const type = cppdict::get_value(dict, "type", BoundaryType::None);
-        _model_menu_type const quantities{scalars, vectors};
+        _model_menu_type const quantities{scalars, vectors, populationNames};
 
         // initialize the boundary
         boundary_ptr_type boundary = std::make_unique<boundary_type>(type, location);
@@ -94,6 +97,7 @@ private:
     {
         scalar_quantity_list_type const& scalars;
         vector_quantity_list_type const& vectors;
+        std::vector<std::string> const& populationNames;
     };
 
 
@@ -106,6 +110,12 @@ private:
             boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(quantity);
         for (auto const quantity : quantities.vectors)
             boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(quantity);
+        if constexpr (!std::is_void_v<ParticleArrayT>)
+        {
+            for (auto const& popName : quantities.populationNames)
+                boundary->template registerParticleCondition<ParticleBoundaryConditionType::None>(
+                    popName);
+        }
     }
 
     /** @brief Register boundary conditions to make a reflective boundary */
