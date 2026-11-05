@@ -70,7 +70,7 @@ inline void validatePhysicalBoundariesDeclared(initializer::PHAREDict const& gri
  *
  * @tparam GridLayoutT The grid layout type.
  */
-template<typename GridLayoutT, IsField FieldT>
+template<typename GridLayoutT, IsField FieldT, typename ParticleArrayT = void>
 class BoundaryManager
 {
 public:
@@ -90,23 +90,53 @@ public:
         ByBoundaryType,
     };
 
+    /**
+     * @brief Optional construction parameters.
+     *
+     * Use designated initializers to set only the needed fields, e.g.
+     * @code {.gamma = 5. / 3.} @endcode or
+     * @code {.populationNames = names, .priorityPolicy = PriorityPolicy::ByBoundaryType} @endcode
+     * Fields must appear in declaration order, but any of them may be omitted.
+     */
+    struct Options
+    {
+        /** Heat capacity ratio, required to compute the inflow total energy (MHD). */
+        double gamma = 0.0;
+        /** Names of the ion populations requiring a particle boundary condition (hybrid). */
+        std::vector<std::string> populationNames{};
+        /** How the master boundary is chosen at corners and edges. */
+        PriorityPolicy priorityPolicy = PriorityPolicy::ByDirection;
+    };
+
     BoundaryManager() = delete;
+
+    /**
+     * @brief Constructor with default options.
+     *
+     * Delegates instead of using a default argument: a default argument `Options const& = {}`
+     * would need Options' default member initializers before the end of the enclosing class.
+     */
+    BoundaryManager(PHARE::initializer::PHAREDict const& dict,
+                    std::vector<typename physical_quantity_type::Scalar> const& scalarQuantities,
+                    std::vector<typename physical_quantity_type::Vector> const& vectorQuantities)
+        : BoundaryManager(dict, scalarQuantities, vectorQuantities, Options{})
+    {
+    }
 
     /**
      * @brief Constructor. Register boundary conditions based on inputfile data.
      * @param dict Configuration dictionary.
      * @param scalar_quantities List of scalar quantities to manage.
      * @param vector_quantities List of vector quantities to manage.
-     * @param gamma Heat capacity ratio, required to compute the inflow total energy
+     * @param options Optional parameters (gamma, population names, priority policy).
      */
     BoundaryManager(PHARE::initializer::PHAREDict const& dict,
                     std::vector<typename physical_quantity_type::Scalar> const& scalarQuantities,
                     std::vector<typename physical_quantity_type::Vector> const& vectorQuantities,
-                    double const gamma            = 0.0,
-                    PriorityPolicy priorityPolicy = PriorityPolicy::ByDirection)
+                    Options const& options)
 
-        : gamma_{gamma}
-        , priority_policy_{priorityPolicy}
+        : gamma_{options.gamma}
+        , priority_policy_{options.priorityPolicy}
     {
         if (!dict.isNode())
             return;
@@ -115,7 +145,8 @@ public:
         {
             auto const location   = getBoundaryLocationFromString(key);
             boundaries_[location] = boundary_factory_type::create(
-                location, *subdict, scalarQuantities, vectorQuantities, gamma_);
+                location, *subdict, scalarQuantities, vectorQuantities, gamma_,
+                options.populationNames);
         }
     }
 

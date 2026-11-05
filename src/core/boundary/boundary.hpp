@@ -5,6 +5,7 @@
 #include "core/data/field/field_traits.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition_resolver.hpp"
+#include "core/numerics/boundary_condition/particle_boundary_condition_resolver.hpp"
 
 #include <concepts>
 #include <memory>
@@ -22,8 +23,10 @@ namespace PHARE::core
  * desired @c BoundaryType.
  *
  * @tparam GridLayoutT The type for the grid layout.
+ * @tparam FieldT The type for the field.
+ * @tparam ParticleArrayT The type for the particle array.  
  */
-template<typename GridLayoutT, IsField FieldT>
+template<typename GridLayoutT, IsField FieldT, typename ParticleArrayT = void>
 class Boundary
 {
 public:
@@ -36,6 +39,8 @@ public:
     using vector_field_type           = VecField<field_type, physical_quantity_type>;
     using scalar_field_condition_type = IFieldBoundaryCondition<field_type, GridLayoutT>;
     using vector_field_condition_type = IFieldBoundaryCondition<vector_field_type, GridLayoutT>;
+    using particle_array_type = ParticleArrayT;
+    using particle_condition_type = IParticleBoundaryCondition<particle_array_type, GridLayoutT>;
 
     Boundary() = delete;
     Boundary(BoundaryType type, BoundaryLocation location)
@@ -65,6 +70,17 @@ public:
         auto it = vector_field_conditions_.find(quantity);
         return (it != vector_field_conditions_.end()) ? it->second : nullptr;
     }
+
+    /**
+     * @brief Retrieve the registered particle boundary condition corresponding to a population.
+     */
+    std::shared_ptr<particle_condition_type> 
+    getParticleCondition(std::string const& populationName)
+    {
+        auto it = particle_conditions_.find(populationName);
+        return (it != particle_conditions_.end()) ? it->second : nullptr;
+    }
+
 
     /**
      * @brief Register a field boundary condition for a quantity to the boundary.
@@ -99,6 +115,25 @@ public:
         }
     }
 
+    /**
+     * @brief Register a particle boundary condition for a population to the boundary.
+     *
+     * @tparam type The corresponding value of the @c ParticleBoundaryConditionType enum
+     * corresponding to the desired boundary type.
+     * @tparam Args Types of the arguments for the ParticleConditionT constructor.
+     *
+     * @param populationName The name of the population to which the particle condition should apply.
+     * @param args The arguments for the particle BC constructor, passed by perfect forwarding to
+     * the particle BC factory.
+     */
+    template<ParticleBoundaryConditionType type, typename... Args>
+    void registerParticleCondition(std::string const& populationName, Args&&... args)
+    {
+        particle_conditions_[populationName]
+            = std::make_shared<ParticleBoundaryCondition<type, particle_array_type, GridLayoutT>>(
+                std::forward<Args>(args)...);
+    }
+
 private:
     /** The type of the boundary (open, inflow, reflective ...) */
     BoundaryType type_;
@@ -110,6 +145,9 @@ private:
     /** The list of registered vector field boundary conditions on the boundary */
     std::unordered_map<vector_quantity_type, std::shared_ptr<vector_field_condition_type>>
         vector_field_conditions_;
+    /** The list of registered particle boundary conditions on the boundary */
+    std::unordered_map<std::string, std::shared_ptr<particle_condition_type>>
+        particle_conditions_;
 };
 
 } // namespace PHARE::core
