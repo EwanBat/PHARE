@@ -5,12 +5,19 @@
 
 namespace PHARE::core
 {
-// TODO: implement (forward declaration only, so the resolver compiles)
+/**
+ * @brief No-op particle boundary condition: leaves particles untouched.
+ */
 template<typename ParticleArrayT, typename GridLayoutT>
 class ParticleBoundaryConditionNone : public IParticleBoundaryCondition<ParticleArrayT, GridLayoutT>
 {
 public:
     using Super = IParticleBoundaryCondition<ParticleArrayT, GridLayoutT>;
+
+    ParticleBoundaryConditionType getType() const override
+    {
+        return ParticleBoundaryConditionType::None;
+    }
 };
 } // namespace PHARE::core
 
