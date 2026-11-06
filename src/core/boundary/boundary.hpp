@@ -32,7 +32,7 @@ class Boundary
 public:
     using physical_quantity_type = decltype(GridLayoutT::options.field_options)::Quantity;
     using field_type             = FieldT;
-    using This                   = Boundary<GridLayoutT, FieldT>;
+    using This                   = Boundary<GridLayoutT, FieldT, ParticleArrayT>;
     using scalar_quantity_type   = field_type::physical_quantity_type;
     static_assert(std::same_as<scalar_quantity_type, typename physical_quantity_type::Scalar>);
     using vector_quantity_type        = physical_quantity_type::Vector;

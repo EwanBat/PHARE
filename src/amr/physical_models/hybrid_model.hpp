@@ -44,7 +44,8 @@ public:
     using ions_type              = Ions;
     using particle_array_type    = Ions::particle_array_type;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, grid_type>;
-    using boundary_manager_type  = core::BoundaryManager<gridlayout_type, field_type>;
+    using boundary_manager_type
+        = core::BoundaryManager<gridlayout_type, field_type, particle_array_type>;
     using ParticleInitializerFactory
         = core::ParticleInitializerFactory<particle_array_type, gridlayout_type>;
 
@@ -91,15 +92,24 @@ public:
         , state{dict}
         , resourcesManager{_resourcesManager}
     {
-        // no boundary conditions in hybrid for now, but boundaryManager needed by the messenger, so
-        // we create a dummy one
+        // Only "none" boundaries (no-op field and particle conditions) are supported in hybrid
+        // for now; physical boundary types are rejected by the BoundaryFactory.
+        std::vector<core::HybridQuantity::Scalar> scalarQuantities = {
+            core::HybridQuantity::Scalar::rho,
+        };
+        std::vector<core::HybridQuantity::Vector> vectorQuantities = {
+            core::HybridQuantity::Vector::B,
+            core::HybridQuantity::Vector::E,
+        };
+        std::vector<std::string> populationNames = state.ions.populationNames();
+
         if (dict.contains("grid"))
             core::validatePhysicalBoundariesDeclared<dimension>(dict["grid"]);
         auto const has_bcs = dict.contains("grid") && dict["grid"].contains("domain_boundaries");
         boundaryManager    = std::make_shared<boundary_manager_type>(
             has_bcs ? dict["grid"]["domain_boundaries"] : PHARE::initializer::PHAREDict{},
-            std::vector<core::HybridQuantity::Scalar>{},
-            std::vector<core::HybridQuantity::Vector>{});
+            scalarQuantities, vectorQuantities,
+            typename boundary_manager_type::Options{.populationNames = populationNames});
     }
 
 
@@ -184,7 +194,8 @@ void HybridModel<GridLayoutT, Electromag, Ions, Electrons, AMR_Types, Grid_t>::f
     transform_(state.ions, hybridInfo.interiorParticles);
     transform_(state.ions, hybridInfo.levelGhostParticlesOld);
     transform_(state.ions, hybridInfo.levelGhostParticlesNew);
-    transform_(state.ions, hybridInfo.patchGhostParticles);
+    transform_(state.ions, hybridInfo.patchGhostParticles); // Might add more particle types in the
+                                                            // future, for reflective BC for example
 
     for (auto const& pop : state.ions)
     {

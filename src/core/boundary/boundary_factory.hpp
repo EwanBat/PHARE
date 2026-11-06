@@ -38,7 +38,7 @@ class BoundaryFactory
 public:
     using physical_quantity_type    = decltype(GridLayoutT::options.field_options)::Quantity;
     using field_type                = FieldT;
-    using boundary_type             = Boundary<GridLayoutT, FieldT>;
+    using boundary_type             = Boundary<GridLayoutT, FieldT, ParticleArrayT>;
     using boundary_ptr_type         = std::unique_ptr<boundary_type>;
     using scalar_quantity_list_type = std::vector<typename physical_quantity_type::Scalar>;
     using vector_quantity_list_type = std::vector<typename physical_quantity_type::Vector>;

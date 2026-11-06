@@ -789,35 +789,21 @@ namespace amr
 
             // model-E and Eavg C-F ghosts are time interpolated between the coarse E
             // snapshots Eold_ (t=n) and model E (t=n+1). Eavg is filled at the half-time
-            // abscissa by the solver; model-E at newTime.
-            elecGhostsRefiners_.addTimeRefiners(info->ghostElectric, info->modelElectric,
-                                                Eold_.name(), EfieldRefineOp_, vecFieldTimeOp_,
-                                                nonOverwriteInteriorTFfillPattern);
+            // abscissa by the solver; model-E at newTime. Each one keeps its own patch strategy,
+            // so that the physical-boundary ghosts are filled by its boundary condition.
+            registerGhostRefinePatchStrategies_(elecPatchStrats_, info->ghostElectric);
+            for (std::size_t i = 0; i < info->ghostElectric.size(); ++i)
+            {
+                elecGhostsRefiners_.addTimeRefiner(
+                    info->ghostElectric[i], info->modelElectric, Eold_.name(), EfieldRefineOp_,
+                    vecFieldTimeOp_, info->ghostElectric[i], nonOverwriteInteriorTFfillPattern,
+                    elecPatchStrats_[i]);
+            }
 
 
-            // we need a separate patch strategy for each refiner so that each one can register
-            // their required ids
-            magneticPatchStratPerGhostRefiner_ = [&]() {
-                std::vector<std::shared_ptr<
-                    MagneticRefinePatchStrategy<VectorFieldDataT, BoundaryManagerT>>>
-                    result;
-
-                result.reserve(info->ghostMagnetic.size());
-
-                for (auto const& key : info->ghostMagnetic)
-                {
-                    auto&& [id] = resourcesManager_->getIDsList(key);
-
-                    auto patch_strat = std::make_shared<
-                        MagneticRefinePatchStrategy<VectorFieldDataT, BoundaryManagerT>>(
-                        *boundaryManager_);
-
-                    patch_strat->registerIDs(id);
-
-                    result.push_back(patch_strat);
-                }
-                return result;
-            }();
+            // the strategy is per quantity, not per refiner: each one registers the id of its
+            // quantity, so that the physical-boundary ghosts are filled by its boundary condition
+            registerGhostRefinePatchStrategies_(magPatchStrats_, info->ghostMagnetic);
 
             // B (and Bpred) C-F ghosts are time interpolated between Bold_ (t=n) and model
             // B (t=n+1). Per-refiner magnetic patch strategy is carried through so the
@@ -827,7 +813,7 @@ namespace amr
                 magGhostsRefiners_.addTimeRefiner(
                     info->ghostMagnetic[i], info->modelMagnetic, Bold_.name(), BRefineOp_,
                     vecFieldTimeOp_, info->ghostMagnetic[i], nonOverwriteInteriorTFfillPattern,
-                    magneticPatchStratPerGhostRefiner_[i]);
+                    magPatchStrats_[i]);
             }
 
 
@@ -844,6 +830,33 @@ namespace amr
 
 
 
+        /**
+         * @brief Register a list of refine patch strategy pointers corresponding to a list of
+         * keys.
+         *
+         * @tparam RefinePatchStrategyT type inheriting from SAMRAI's `RefinePatchStrategy`
+         * @param patchStrategies the list of refine patch strategy pointers.
+         * @param keys the list of keys.
+         */
+        template<typename RefinePatchStrategyT>
+        void registerGhostRefinePatchStrategies_(
+            std::vector<std::shared_ptr<RefinePatchStrategyT>>& patchStrategies,
+            std::vector<std::string> const& keys)
+        {
+            patchStrategies.clear(); // registerQuantities must be idempotent
+            patchStrategies.reserve(keys.size());
+            for (auto const& key : keys)
+            {
+                auto&& [id]     = resourcesManager_->getIDsList(key);
+                auto patchStrat = std::make_shared<RefinePatchStrategyT>(*boundaryManager_);
+                patchStrat->registerIDs(id);
+                patchStrategies.push_back(patchStrat);
+            }
+        }
+
+
+
+
         void registerInitComms(std::unique_ptr<HybridMessengerInfo> const& info)
         {
             auto b_id = resourcesManager_->getID(info->modelMagnetic);
@@ -853,9 +866,17 @@ namespace amr
             // no fill pattern given for this init
             // will use boxgeometryvariable fillpattern, itself using the
             // field geometry with overwrite_interior true from SAMRAI
-            // we could set the overwriteInteriorTFfillPattern it would be the same
-            electricInitRefiners_.addStaticRefiners(info->initElectric, EfieldRefineOp_,
-                                                    info->initElectric);
+            // we could set the overwriteInteriorTFfillPattern it would be the same.
+            // Each one keeps its own patch strategy, so that the physical-boundary ghosts of a new
+            // or regridded level, and the coarse data refined next to a physical boundary, are
+            // filled by its boundary condition.
+            registerGhostRefinePatchStrategies_(elecInitPatchStrats_, info->initElectric);
+            for (std::size_t i = 0; i < info->initElectric.size(); ++i)
+            {
+                electricInitRefiners_.addStaticRefiner(info->initElectric[i], EfieldRefineOp_,
+                                                       info->initElectric[i], nullptr,
+                                                       elecInitPatchStrats_[i]);
+            }
 
 
             domainParticlesRefiners_.addStaticRefiners(
@@ -1140,12 +1161,21 @@ namespace amr
             std::make_shared<MomentsVecFieldCoarsenOp>()};
         CoarsenOperator_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
 
-        MagneticRefinePatchStrategy<VectorFieldDataT, BoundaryManagerT>
-            magneticRefinePatchStrategy_{*boundaryManager_};
+        using MagneticRefinePatchStrategyT
+            = MagneticRefinePatchStrategy<VectorFieldDataT, BoundaryManagerT>;
+        using MagneticRefinePatchStrategyList
+            = std::vector<std::shared_ptr<MagneticRefinePatchStrategyT>>;
 
-        std::vector<
-            std::shared_ptr<MagneticRefinePatchStrategy<VectorFieldDataT, BoundaryManagerT>>>
-            magneticPatchStratPerGhostRefiner_;
+        using VectorFieldRefinePatchStrategyT
+            = FieldRefinePatchStrategy<VectorFieldDataT, BoundaryManagerT>;
+        using VectorFieldRefinePatchStrategyList
+            = std::vector<std::shared_ptr<VectorFieldRefinePatchStrategyT>>;
+
+        MagneticRefinePatchStrategyT magneticRefinePatchStrategy_{*boundaryManager_};
+
+        MagneticRefinePatchStrategyList magPatchStrats_;
+        VectorFieldRefinePatchStrategyList elecPatchStrats_;
+        VectorFieldRefinePatchStrategyList elecInitPatchStrats_;
     };
 
 

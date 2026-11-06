@@ -76,8 +76,8 @@ class BoundaryManager
 public:
     using physical_quantity_type = decltype(GridLayoutT::options.field_options)::Quantity;
     using field_type             = FieldT;
-    using boundary_type          = Boundary<GridLayoutT, FieldT>;
-    using boundary_factory_type  = BoundaryFactory<GridLayoutT, FieldT>;
+    using boundary_type          = Boundary<GridLayoutT, FieldT, ParticleArrayT>;
+    using boundary_factory_type  = BoundaryFactory<GridLayoutT, FieldT, ParticleArrayT>;
     using scalar_quantity_type   = field_type::physical_quantity_type;
     static_assert(std::same_as<scalar_quantity_type, typename physical_quantity_type::Scalar>);
     using vector_field_type     = VecField<field_type, physical_quantity_type>;
