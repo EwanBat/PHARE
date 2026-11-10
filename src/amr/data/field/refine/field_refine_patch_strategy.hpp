@@ -3,6 +3,7 @@
 
 #include "amr/data/field/field_data_traits.hpp"
 #include "amr/data/tensorfield/tensor_field_data_traits.hpp"
+#include "amr/utilities/boundary/physical_boundary_boxes.hpp"
 
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/vecfield/vecfield.hpp"
@@ -107,9 +108,6 @@ public:
                    static_cast<SAMRAI::tbox::Dimension>(static_cast<int>(dimension)),
                    static_cast<int>(gridLayout.options.field_ghost_width)));
 
-        std::shared_ptr<patch_geometry_type> patchGeom = patch.getPatchGeometry();
-        assert(patchGeom && "patch has no geometry.");
-
         auto scalarOrTensorField = [&]() {
             if constexpr (is_scalar)
             {
@@ -121,55 +119,21 @@ public:
             };
         }();
 
-        // must be retrieved to pass as argument to patchGeom->getBoundaryFillBox later
-        SAMRAI::hier::Box const& patch_box = patch.getBox();
-
-        // iterations on potential boundary codimensions in [[1, dim]]
-        core::for_N<dimension>([&](auto tag) {
-            constexpr auto codim = tag.value + 1;
-
-            // find all boundaries with the current codimension
-            std::vector<SAMRAI::hier::BoundaryBox> const& boundaries
-                = patchGeom->getCodimensionBoundaries(static_cast<int>(codim));
-
-            // iterate on all found boundaries of given codimension
-            for (SAMRAI::hier::BoundaryBox const& bBox : boundaries)
-            {
-                // retrieve the localBox of ghost that must be filled
-                SAMRAI::hier::Box samraiBoxToFill
-                    = patchGeom->getBoundaryFillBox(bBox, patch_box, ghost_width_to_fill);
-                auto const localBox
-                    = gridLayout.AMRToLocal(phare_box_from<dimension>(samraiBoxToFill));
-
-                // get location of the currently treated boundary
-                auto const currentBoundaryLocation
-                    = static_cast<core::CodimNBoundaryLocation<codim>>(bBox.getLocationIndex());
-
-                // get the "master" 1-codimensional boundary that applies at the currently
-                // treated boundary: for instance corner in 2D belongs to two different
-                // 1-codimensional boundaries (edges), so two boundary conditions compete there.
-                // The responsibility of choosing which boundary condition prevails there is on
-                // the boundaryManager. If the current boundary is itself 1-codimensional, then
-                // masterBoundaryLocation = currentBoundaryLocation.
-                core::BoundaryLocation const masterBoundaryLocation
-                    = boundaryManager_.getMasterBoundaryLocation(currentBoundaryLocation);
-                auto* const masterBoundary = boundaryManager_.getBoundary(masterBoundaryLocation);
-                if (!masterBoundary)
-                    throw std::runtime_error("Boundary not found.");
-
+        forEachPhysicalBoundaryBox<dimension>(
+            patch, ghost_width_to_fill, boundaryManager_, [&](auto const& boundaryBox) {
                 // get the boundary condition for the current physical quantity.
                 std::shared_ptr<boundary_condition_type> bc
-                    = masterBoundary->getFieldCondition(scalarOrTensorField.physicalQuantity());
+                    = boundaryBox.boundary.getFieldCondition(
+                        scalarOrTensorField.physicalQuantity());
                 if (!bc)
                     throw std::runtime_error("Field boundary condition not found.");
 
-                // apply the retained boundary condition, as if the current boundary was belonging
-                // to the 1-codimensional master boundary; this essentially defines which Cartesian
+                // apply the retained boundary condition, as if the current box was belonging to
+                // the 1-codimensional master boundary; this essentially defines which Cartesian
                 // direction is considered to be the normal one.
-                bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout,
-                          fill_time);
-            }
-        });
+                bc->apply(scalarOrTensorField, boundaryBox.location,
+                          gridLayout.AMRToLocal(boundaryBox.box), gridLayout, fill_time);
+            });
     }
 
 

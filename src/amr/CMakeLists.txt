@@ -7,6 +7,7 @@ set( SOURCES_INC
      data/particles/particles_data.hpp
      data/particles/particles_data_factory.hpp
      data/particles/particles_variable.hpp
+     data/particles/particle_boundary_patch_strategy.hpp
      data/field/coarsening/field_coarsen_operator.hpp
      data/field/coarsening/field_coarsen_index_weight.hpp
      data/field/coarsening/coarsen_weighter.hpp
