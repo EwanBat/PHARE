@@ -1,6 +1,7 @@
 #ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_PARTICLE_BOUNDARY_CONDITION_NONE_HPP
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_PARTICLE_BOUNDARY_CONDITION_NONE_HPP
 
+#include "core/boundary/boundary_defs.hpp"
 #include "core/numerics/boundary_condition/particle_boundary_condition.hpp"
 
 namespace PHARE::core
@@ -17,6 +18,12 @@ public:
     ParticleBoundaryConditionType getType() const override
     {
         return ParticleBoundaryConditionType::None;
+    }
+
+    void apply(ParticleArrayT& /*particleArray*/, BoundaryLocation const /*boundaryLocation*/,
+               Box<std::uint32_t, Super::dimension> const& /*localGhostBox*/,
+               GridLayoutT const& /*gridLayout*/, [[maybe_unused]] double const /*time*/) override
+    {
     }
 };
 } // namespace PHARE::core

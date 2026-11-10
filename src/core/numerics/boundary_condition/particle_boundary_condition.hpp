@@ -1,6 +1,9 @@
 #ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_PARTICLE_BOUNDARY_CONDITION_HPP
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_PARTICLE_BOUNDARY_CONDITION_HPP
 
+#include "core/boundary/boundary_defs.hpp"
+
+
 #include <cstddef>
 
 namespace PHARE::core
@@ -38,6 +41,11 @@ public:
     virtual ParticleBoundaryConditionType getType() const = 0;
 
     virtual ~IParticleBoundaryCondition() = default;
+
+    /** @brief Apply the boundary condition to the given particle array. */
+    virtual void apply(ParticleArrayT& particleArray, BoundaryLocation const boundaryLocation,
+                      Box<std::uint32_t, dimension> const& localGhostBox,
+                      GridLayoutT const& gridLayout, double const time) = 0;
 };
 
 } // namespace PHARE::core  
