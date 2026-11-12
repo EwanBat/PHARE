@@ -45,13 +45,87 @@ class TestBoundaryStructural(unittest.TestCase):
                 model_options=["MHDModel"],
             )
 
-    def test_physical_only_supported_by_mhd_model(self):
+    def test_open_and_reflective_supported_by_hybrid_model(self):
+        periodicities, resolved = boundary.resolve_boundaries(
+            2,
+            domain_boundaries={
+                "xlower": {"type": "open"},
+                "xupper": {"type": "reflective"},
+            },
+            model_options=["HybridModel"],
+        )
+        self.assertEqual([False, True], periodicities)
+        self.assertIsInstance(resolved["xlower"], boundary.OpenBoundary)
+        self.assertIsInstance(resolved["xupper"], boundary.ReflectiveBoundary)
+
+    def test_super_magnetofast_inflow_rejected_by_hybrid_model(self):
         with self.assertRaises(ValueError):
             boundary.resolve_boundaries(
-                2,
-                domain_boundaries={"xlower": {"type": "open"}, "xupper": {"type": "open"}},
+                1,
+                domain_boundaries={
+                    "xlower": {
+                        "type": "super-magnetofast-inflow",
+                        "velocity": 2.0,
+                        "density": 1.0,
+                        "pressure": 1.0,
+                        "B": [0.5, 1.0, 0.0],
+                    },
+                    "xupper": {"type": "open"},
+                },
                 model_options=["HybridModel"],
             )
+
+    def test_hybrid_inflow_rejected_by_mhd_model(self):
+        with self.assertRaises(ValueError):
+            boundary.resolve_boundaries(
+                1,
+                domain_boundaries={
+                    "xlower": self._hybrid_inflow(),
+                    "xupper": {"type": "open"},
+                },
+                model_options=["MHDModel"],
+            )
+
+    def _hybrid_inflow(self, **overrides):
+        bc = {
+            "type": "hybrid-inflow",
+            "density": 1.0,
+            "velocity": 2.0,
+            "B": [1.0, 0.0, 0.0],
+            "vth": [0.3, 0.3, 0.3],
+        }
+        bc.update(overrides)
+        return bc
+
+    def _resolve_hybrid(self, bc):
+        return boundary.resolve_boundaries(
+            1,
+            domain_boundaries={"xlower": bc, "xupper": {"type": "open"}},
+            model_options=["HybridModel"],
+        )[1]
+
+    def test_hybrid_inflow_resolved(self):
+        resolved = self._resolve_hybrid(self._hybrid_inflow())
+        bc = resolved["xlower"]
+        self.assertIsInstance(bc, boundary.HybridInflowBoundary)
+        self.assertEqual(1.0, bc.density)
+        self.assertEqual((2.0, 0.0, 0.0), bc.velocity)
+        self.assertEqual((1.0, 0.0, 0.0), bc.B)
+        self.assertEqual((0.3, 0.3, 0.3), bc.vth)
+
+    def test_hybrid_inflow_requires_vth(self):
+        bc = self._hybrid_inflow()
+        del bc["vth"]
+        with self.assertRaises(KeyError):
+            self._resolve_hybrid(bc)
+
+    def test_hybrid_inflow_negative_vth_rejected(self):
+        with self.assertRaises(ValueError):
+            self._resolve_hybrid(self._hybrid_inflow(vth=[0.3, -0.1, 0.3]))
+
+    def test_hybrid_inflow_velocity_must_enter(self):
+        with self.assertRaises(ValueError):
+            self._resolve_hybrid(self._hybrid_inflow(velocity=[-1.0, 0.0, 0.0]))
 
     def test_unknown_location_rejected(self):
         with self.assertRaises(ValueError):

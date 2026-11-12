@@ -13,7 +13,7 @@
 namespace PHARE::core
 {
 /** @brief Physical behavior of a boundary. */
-enum class BoundaryType { None, Reflective, SuperMagnetofastInflow, Open };
+enum class BoundaryType { None, Reflective, SuperMagnetofastInflow, Open, HybridInflow };
 
 /**
  * @brief Possible locations of 1-codimensional boundary (a face in 3D, an edge in 2D, an extremity

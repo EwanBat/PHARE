@@ -28,6 +28,7 @@
 #include "amr/data/field/coarsening/default_field_coarsener.hpp"
 #include "amr/data/particles/particles_variable_fill_pattern.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
+#include "amr/data/particles/particle_boundary_patch_strategy.hpp"
 
 #include <SAMRAI/hier/IntVector.h>
 #include <SAMRAI/hier/Patch.h>
@@ -825,6 +826,8 @@ namespace amr
             chargeDensityPatchGhostsRefiners_.addStaticRefiner(
                 info->modelIonDensity, fieldRefineOp_, info->modelIonDensity,
                 nonOverwriteInteriorFieldFillPattern);
+
+            registerParticleBoundaryStrategies_(info);
         }
 
 
@@ -854,6 +857,39 @@ namespace amr
             }
         }
 
+
+
+
+        /**
+         * @brief Create one ParticleBoundaryPatchStrategy per ion population.
+         *
+         * HybridModel fills info->patchGhostParticles (population names), info->sumBorderFields
+         * (their particle densities) and info->ghostFlux (their fluxes) in the same population
+         * order, so index i of the three lists is the same population.
+         *
+         * @param info the messenger info given by the model.
+         */
+        void registerParticleBoundaryStrategies_(std::unique_ptr<HybridMessengerInfo> const& info)
+        {
+            auto const& popNames = info->patchGhostParticles;
+            if (info->sumBorderFields.size() != popNames.size()
+                or info->ghostFlux.size() != popNames.size())
+                throw std::runtime_error("registerParticleBoundaryStrategies_: expected one "
+                                         "density and one flux per population");
+
+            partBoundaryStrats_.clear(); // registerQuantities must be idempotent
+            partBoundaryStrats_.reserve(popNames.size());
+            for (std::size_t i = 0; i < popNames.size(); ++i)
+            {
+                auto const [particlesId, densityId, fluxId] = resourcesManager_->getIDsList(
+                    popNames[i], info->sumBorderFields[i], info->ghostFlux[i]);
+
+                auto strat = std::make_shared<ParticleBoundaryPatchStrategyT>(*boundaryManager_,
+                                                                              popNames[i]);
+                strat->registerIDs(particlesId, densityId, fluxId);
+                partBoundaryStrats_.push_back(std::move(strat));
+            }
+        }
 
 
 
@@ -1176,6 +1212,12 @@ namespace amr
         MagneticRefinePatchStrategyList magPatchStrats_;
         VectorFieldRefinePatchStrategyList elecPatchStrats_;
         VectorFieldRefinePatchStrategyList elecInitPatchStrats_;
+
+        using ParticleBoundaryPatchStrategyT
+            = ParticleBoundaryPatchStrategy<GridLayoutT, BoundaryManagerT>;
+        using ParticleBoundaryPatchStrategyList
+            = std::vector<std::shared_ptr<ParticleBoundaryPatchStrategyT>>;
+        ParticleBoundaryPatchStrategyList partBoundaryStrats_; //!< one per ion population
     };
 
 

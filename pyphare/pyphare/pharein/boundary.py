@@ -4,6 +4,9 @@ Boundary-condition resolution and validation for pharein.Simulation.
 'domain_boundaries' (the public Simulation constructor option) is a per-location dict:
   {"xlower": {"type": "open"}, "xupper": {"type": "super-magnetofast-inflow", "density": ..., ...}}
 
+Each type lists the models that support it (attribute 'models'): super-magnetofast-inflow is MHD
+only, hybrid-inflow is hybrid only, open and reflective are both.
+
 Each location dict holds the boundary type and, at the same level, the parameters of that type.
 
 A direction is periodic unless one of its locations appears in 'domain_boundaries', in which case it is
@@ -28,6 +31,7 @@ class Boundary(ABC):
     """Base class holding the serialisation entry point common to every BC type."""
 
     type = None
+    models = frozenset({"MHDModel", "HybridModel"})
 
     def populate_dict(self, dp, bc_path, ndim):
         dp.add_enum_int(
@@ -120,6 +124,7 @@ def _normalize_inflow_velocity(location, velocity, ndim):
 @dataclass
 class SuperMagnetofastInflowBoundary(Boundary):
     type = "super-magnetofast-inflow"
+    models = frozenset({"MHDModel"})
     density: object
     pressure: object
     velocity: object
@@ -143,6 +148,50 @@ class SuperMagnetofastInflowBoundary(Boundary):
         dp.add_double(f"{bc_path}/pressure", self.pressure)
         _add_inflow_vector(dp, bc_path, "velocity", self.velocity)
         _add_inflow_vector(dp, bc_path, "B", self.B)
+
+
+def _normalize_thermal_velocity(location, vth, ndim):
+    """Return the thermal velocity as a (vthx, vthy, vthz) tuple of non-negative floats."""
+    v = _normalize_inflow_vector(location, "vth", vth, ndim)
+    if any(c < 0 for c in v):
+        raise ValueError(
+            f"'vth' at inflow boundary '{location}' must have non-negative components, "
+            f"got {vth!r}"
+        )
+    return v
+
+
+@dataclass
+class HybridInflowBoundary(Boundary):
+    """Inflow of a drifting Maxwellian plasma into a hybrid simulation.
+
+    B is imposed, E = -v x B on the face, and the particles entering the domain are drawn
+    from the density, bulk velocity and thermal velocity given here.
+    """
+
+    type = "hybrid-inflow"
+    models = frozenset({"HybridModel"})
+    density: object
+    velocity: object
+    B: object
+    vth: object
+    location: InitVar[str]
+    ndim: InitVar[int]
+
+    def __post_init__(self, location, ndim):
+        self.density = _normalize_inflow_scalar(
+            location, "density", self.density, ndim, positive=True
+        )
+        self.velocity = _normalize_inflow_velocity(location, self.velocity, ndim)
+        self.B = _normalize_inflow_vector(location, "B", self.B, ndim)
+        self.vth = _normalize_thermal_velocity(location, self.vth, ndim)
+
+    def populate_dict(self, dp, bc_path, ndim):
+        super().populate_dict(dp, bc_path, ndim)
+        dp.add_double(f"{bc_path}/density", self.density)
+        _add_inflow_vector(dp, bc_path, "velocity", self.velocity)
+        _add_inflow_vector(dp, bc_path, "B", self.B)
+        _add_inflow_vector(dp, bc_path, "vth", self.vth)
 
 
 # ------------------------------------------------------------------------------
@@ -185,11 +234,6 @@ def resolve_boundaries(ndim, **kwargs):
         periodicities.append(not all(given))
 
     model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
-    if raw and "MHDModel" not in model_options:
-        raise ValueError(
-            "non-periodic domain boundaries are only supported by the MHDModel; "
-            f"got model_options={model_options}"
-        )
 
     user_types = tuple(t for t in _type_to_class if t != "none")
     resolved = {}
@@ -215,6 +259,11 @@ def resolve_boundaries(ndim, **kwargs):
             )
 
         ctor = _type_to_class[boundary_type]
+        if not ctor.models.intersection(model_options):
+            raise ValueError(
+                f"Boundary type '{boundary_type}' at '{location}' is only supported by "
+                f"{sorted(ctor.models)}; got model_options={model_options}"
+            )
         params = {key: val for key, val in bc.items() if key != "type"}
         expected = [field.name for field in fields(ctor)]
 

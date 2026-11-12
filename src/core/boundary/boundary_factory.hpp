@@ -4,6 +4,7 @@
 #include "core/boundary/boundary.hpp"
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/field/field_traits.hpp"
+#include "core/models/quantities/hybrid_quantities.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 
@@ -15,6 +16,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace PHARE::core
@@ -22,6 +24,9 @@ namespace PHARE::core
 
 template<typename T>
 concept IsMHDQuantity = std::same_as<T, MHDQuantity>;
+
+template<typename T>
+concept IsHybridQuantity = std::same_as<T, HybridQuantity>;
 
 /**
  * @brief Contains all the recipes to create a boundary object according to the desired
@@ -86,6 +91,9 @@ public:
                 register_inflow_conditions_(boundary, dict, quantities, gamma);
                 break;
             case BoundaryType::Open: register_open_conditions_(boundary, quantities); break;
+            case BoundaryType::HybridInflow:
+                register_hybrid_inflow_conditions_(boundary, dict, quantities);
+                break;
             default: throw std::runtime_error("Boundary type not implemented.");
         }
         return boundary;
@@ -122,9 +130,34 @@ private:
     static void register_reflective_conditions_(boundary_ptr_type& boundary,
                                                 _model_menu_type const& quantities)
     {
-        if constexpr (!IsMHDQuantity<physical_quantity_type>)
+        if constexpr (IsHybridQuantity<physical_quantity_type>)
+        {
+            // B and E follow a perfect conductor, as in MHD. The ion moments are not read in the
+            // physical ghost cells: the particles give their values on the domain nodes.
+            register_scalars_none_(boundary, quantities);
+            for (auto const quantity : quantities.vectors)
+            {
+                switch (quantity)
+                {
+                    case (physical_quantity_type::Vector::B):
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
+                        break;
+                    case (physical_quantity_type::Vector::E):
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::AntiSymmetric>(quantity);
+                        break;
+                    default:
+                        boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                            quantity);
+                        break;
+                }
+            }
+            register_particles_<ParticleBoundaryConditionType::Reflective>(boundary, quantities);
+        }
+        else if constexpr (!IsMHDQuantity<physical_quantity_type>)
             throw std::runtime_error(
-                "Reflective boundary type is only supported by the MHD model.");
+                "Reflective boundary type is only supported by the MHD and hybrid models.");
         else
         {
             for (auto const quantity : quantities.scalars)
@@ -163,8 +196,35 @@ private:
     static void register_open_conditions_(boundary_ptr_type& boundary,
                                           _model_menu_type const& quantities)
     {
-        if constexpr (!IsMHDQuantity<physical_quantity_type>)
-            throw std::runtime_error("Open boundary type is only supported by the MHD model.");
+        if constexpr (IsHybridQuantity<physical_quantity_type>)
+        {
+            // Zero-gradient B and E: the particles kept beyond the face are pushed with the field
+            // just inside. The ion moments are not read in the physical ghost cells.
+            register_scalars_none_(boundary, quantities);
+            for (auto const quantity : quantities.vectors)
+            {
+                switch (quantity)
+                {
+                    case (physical_quantity_type::Vector::B):
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
+                        break;
+                    case (physical_quantity_type::Vector::E):
+                        boundary
+                            ->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
+                                quantity);
+                        break;
+                    default:
+                        boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                            quantity);
+                        break;
+                }
+            }
+            register_particles_<ParticleBoundaryConditionType::Open>(boundary, quantities);
+        }
+        else if constexpr (!IsMHDQuantity<physical_quantity_type>)
+            throw std::runtime_error(
+                "Open boundary type is only supported by the MHD and hybrid models.");
         else
         {
             for (auto const quantity : quantities.scalars)
@@ -286,6 +346,84 @@ private:
                         break;
                 }
             }
+        }
+    }
+
+    /** @brief Register boundary conditions to make a hybrid inflow boundary.
+     *
+     *  The magnetic field is imposed through the motional electric field E = -v x B on the
+     *  boundary, and its ghosts are filled with the inflow B by a divergence-free transverse
+     *  Dirichlet condition. Each ion population gets an inflow particle condition holding the
+     *  inflow density, bulk velocity and thermal velocity, which draws the incoming particles.
+     *  The ion moments are not imposed: the particles give them.
+     */
+    static void register_hybrid_inflow_conditions_(boundary_ptr_type& boundary,
+                                                   initializer::PHAREDict const& data,
+                                                   _model_menu_type const& quantities)
+    {
+        if constexpr (!IsHybridQuantity<physical_quantity_type>)
+            throw std::runtime_error(
+                "HybridInflow boundary type is only supported by the hybrid model.");
+        else
+        {
+            for (auto const key : {"density", "velocity", "B", "vth"})
+                if (!data.contains(key))
+                    throw std::runtime_error(std::string{"BoundaryFactory: HybridInflow requires '"}
+                                             + key + "'.");
+
+            auto const density = data["density"].template to<double>();
+            auto const v       = initializer::parseDimXYZType<double, 3>(data, "velocity");
+            auto const B       = initializer::parseDimXYZType<double, 3>(data, "B");
+            auto const vth     = initializer::parseDimXYZType<double, 3>(data, "vth");
+
+            register_scalars_none_(boundary, quantities);
+            for (auto const quantity : quantities.vectors)
+            {
+                switch (quantity)
+                {
+                    case (physical_quantity_type::Vector::B):
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(
+                            quantity, B, DirichletExtrapolation::Constant);
+                        break;
+                    case (physical_quantity_type::Vector::E):
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(
+                            quantity,
+                            std::array<double, 3>{v[2] * B[1] - v[1] * B[2],
+                                                  v[0] * B[2] - v[2] * B[0],
+                                                  v[1] * B[0] - v[0] * B[1]},
+                            DirichletExtrapolation::Constant);
+                        break;
+                    default:
+                        boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                            quantity);
+                        break;
+                }
+            }
+            register_particles_<ParticleBoundaryConditionType::Inflow>(boundary, quantities,
+                                                                       density, v, vth);
+        }
+    }
+
+    /** @brief Register a no-op condition for every scalar quantity. */
+    static void register_scalars_none_(boundary_ptr_type& boundary,
+                                       _model_menu_type const& quantities)
+    {
+        for (auto const quantity : quantities.scalars)
+            boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(quantity);
+    }
+
+    /** @brief Register the particle condition @p type, built from @p args, for every population.
+     *  Does nothing when the boundary has no particle array type. */
+    template<ParticleBoundaryConditionType type, typename... Args>
+    static void register_particles_(boundary_ptr_type& boundary,
+                                    _model_menu_type const& quantities, Args const&... args)
+    {
+        if constexpr (!std::is_void_v<ParticleArrayT>)
+        {
+            for (auto const& popName : quantities.populationNames)
+                boundary->template registerParticleCondition<type>(popName, args...);
         }
     }
 };
