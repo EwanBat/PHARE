@@ -166,7 +166,8 @@ PYBIND11_MODULE(cpp_etc, m)
         .value("none", core::BoundaryType::None)
         .value("reflective", core::BoundaryType::Reflective)
         .value("super_magnetofast_inflow", core::BoundaryType::SuperMagnetofastInflow)
-        .value("open", core::BoundaryType::Open);
+        .value("open", core::BoundaryType::Open)
+        .value("hybrid_inflow", core::BoundaryType::HybridInflow);
 
     declareDim<1>(m);
     declareDim<2>(m);

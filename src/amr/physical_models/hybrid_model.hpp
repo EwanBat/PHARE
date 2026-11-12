@@ -92,8 +92,8 @@ public:
         , state{dict}
         , resourcesManager{_resourcesManager}
     {
-        // Only "none" boundaries (no-op field and particle conditions) are supported in hybrid
-        // for now; physical boundary types are rejected by the BoundaryFactory.
+        // Boundary conditions are registered for rho, B and E, and one particle condition per ion
+        // population. The ion flux has none: the moments are not read in the physical ghosts.
         std::vector<core::HybridQuantity::Scalar> scalarQuantities = {
             core::HybridQuantity::Scalar::rho,
         };
