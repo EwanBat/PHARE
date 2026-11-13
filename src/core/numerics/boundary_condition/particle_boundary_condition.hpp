@@ -6,6 +6,9 @@
 #include "core/utilities/box/box.hpp"
 
 #include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
 
 namespace PHARE::core
 {
@@ -50,6 +53,21 @@ enum class ParticleBoundaryStage : int {
     Refill,
     Moments,
     Leavers,
+};
+
+
+/**
+ * @brief What a particle boundary condition needs to know about one ion population.
+ *
+ * Taken from the population's particle initializer, so that the particles drawn at a boundary
+ * look like those drawn in the domain (same number per cell, so the same weight for the same
+ * density).
+ */
+struct ParticleBoundaryInfo
+{
+    std::string name;                      //!< name of the population
+    std::uint32_t nbrParticlesPerCell = 0; //!< particles drawn per cell
+    std::optional<std::size_t> seed{};     //!< random seed; none means a random one
 };
 
 

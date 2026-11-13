@@ -109,7 +109,7 @@ public:
             has_bcs ? dict["grid"]["domain_boundaries"] : PHARE::initializer::PHAREDict{},
             scalarQuantities, vectorQuantities,
             typename boundary_manager_type::Options{
-                .populationNames = state.ions.populationNames(),
+                .populations = boundaryPopulations_(state.ions),
             });
     }
 
@@ -133,6 +133,31 @@ public:
     //-------------------------------------------------------------------------
 
     std::unordered_map<std::string, std::shared_ptr<core::NdArrayVector<dimension, int>>> tags;
+
+private:
+    /** @brief Name, particles per cell and seed of each population, read from its particle
+     *  initializer as ParticleInitializerFactory does, for the particle boundary conditions. */
+    static std::vector<core::ParticleBoundaryInfo> boundaryPopulations_(Ions const& ions)
+    {
+        std::vector<core::ParticleBoundaryInfo> populations;
+        populations.reserve(ions.size());
+        for (auto const& pop : ions)
+        {
+            auto const& info = pop.particleInitializerInfo();
+
+            std::optional<std::size_t> seed;
+            if (info.contains("init") and info["init"].contains("seed"))
+                seed = info["init"]["seed"].template to<std::optional<std::size_t>>();
+
+            // 0 if missing: only an inflow face needs it, and it refuses 0
+            std::uint32_t ppc = 0;
+            if (info.contains("nbr_part_per_cell"))
+                ppc = static_cast<std::uint32_t>(info["nbr_part_per_cell"].template to<int>());
+
+            populations.push_back({.name = pop.name(), .nbrParticlesPerCell = ppc, .seed = seed});
+        }
+        return populations;
+    }
 };
 
 

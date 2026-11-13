@@ -98,6 +98,14 @@ public:
 
     auto erase(IndexRange_ range) { cellMap_.erase(range); }
 
+    /** @brief Erase the particles whose cell is in @p box.
+     *
+     * Only the cells of @p box are visited, through the cell map. The order of the remaining
+     * particles changes: each erased particle is replaced by the last one. Only the cells of
+     * the array's own box are mapped, so a particle outside it is never found.
+     */
+    void erase_in(box_t const& box) { cellMap_.erase_in(box, particles_); }
+
     iterator erase(iterator first, iterator last)
     {
         // should we erase particles indexes associated with these iterators from the cellmap?
