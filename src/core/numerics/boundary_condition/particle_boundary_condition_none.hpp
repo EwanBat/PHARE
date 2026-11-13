@@ -10,7 +10,8 @@ namespace PHARE::core
  * @brief No-op particle boundary condition: leaves particles untouched.
  */
 template<typename ParticleArrayT, typename FieldT, typename GridLayoutT>
-class ParticleBoundaryConditionNone : public IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>
+class ParticleBoundaryConditionNone
+    : public IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>
 {
 public:
     using Super     = IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>;

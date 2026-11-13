@@ -660,8 +660,11 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, HybridModel& m
             }
         })
 
-        // must come before fillIonGhostParticles, which empties patchGhostParticles
-        fromCoarser.applyParticleBoundaryConditions(ions, level, newTime, Stage::Leavers);
+        {
+            // must come before fillIonGhostParticles, which empties patchGhostParticles
+            PHARE_LOG_SCOPE(1, "SolverPPC::moveIons::particleBC::Leavers");
+            fromCoarser.applyParticleBoundaryConditions(ions, level, newTime, Stage::Leavers);
+        }
 
         fromCoarser.fillIonGhostParticles(ions, level, newTime);
 

@@ -48,7 +48,8 @@ public:
                 // TODO: mirror the particles that just left through the face, and move those
                 // that land in the patch back to domainParticles.
                 break;
-            default: break; // reflective does not act at the other moments
+            case ParticleBoundaryStage::Init:
+            case ParticleBoundaryStage::Refill: break; // reflective does not act then
         }
     }
 };

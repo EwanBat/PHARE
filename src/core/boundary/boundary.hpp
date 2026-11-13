@@ -24,7 +24,7 @@ namespace PHARE::core
  *
  * @tparam GridLayoutT The type for the grid layout.
  * @tparam FieldT The type for the field.
- * @tparam ParticleArrayT The type for the particle array.  
+ * @tparam ParticleArrayT The type for the particle array.
  */
 template<typename GridLayoutT, IsField FieldT, typename ParticleArrayT = void>
 class Boundary
@@ -75,8 +75,8 @@ public:
     /**
      * @brief Retrieve the registered particle boundary condition corresponding to a population.
      */
-    std::shared_ptr<particle_condition_type> 
-    getParticleCondition(std::string const& populationName)
+    std::shared_ptr<particle_condition_type>
+    getParticleCondition(std::string const& populationName) const
     {
         auto it = particle_conditions_.find(populationName);
         return (it != particle_conditions_.end()) ? it->second : nullptr;
@@ -123,16 +123,17 @@ public:
      * corresponding to the desired boundary type.
      * @tparam Args Types of the arguments for the ParticleConditionT constructor.
      *
-     * @param populationName The name of the population to which the particle condition should apply.
+     * @param populationName The name of the population the particle condition applies to.
      * @param args The arguments for the particle BC constructor, passed by perfect forwarding to
      * the particle BC factory.
      */
     template<ParticleBoundaryConditionType type, typename... Args>
     void registerParticleCondition(std::string const& populationName, Args&&... args)
     {
+        using condition_type
+            = ParticleBoundaryCondition<type, particle_array_type, field_type, GridLayoutT>;
         particle_conditions_[populationName]
-            = std::make_shared<ParticleBoundaryCondition<type, particle_array_type, field_type, GridLayoutT>>(
-                std::forward<Args>(args)...);
+            = std::make_shared<condition_type>(std::forward<Args>(args)...);
     }
 
 private:

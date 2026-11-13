@@ -27,6 +27,7 @@ enum class ParticleBoundaryConditionType : int {
  * moment, only the conditions that act then are called. Order in a time step:
  *
  *     Init      when the root level is created, or regridded
+ *     Moments   then, once the domain particles are deposited
  *     ----      push (part 1 or part 2 of the step)
  *     Refill    after the real push only (part 2)
  *     Moments   after each push, before the border sums
