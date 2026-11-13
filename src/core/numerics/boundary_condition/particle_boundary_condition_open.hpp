@@ -15,7 +15,8 @@ namespace PHARE::core
  * Physics not implemented yet: the moments are chosen, the work is not written.
  */
 template<typename ParticleArrayT, typename FieldT, typename GridLayoutT>
-class ParticleBoundaryConditionOpen : public IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>
+class ParticleBoundaryConditionOpen
+    : public IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>
 {
 public:
     using Super     = IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>;
@@ -46,7 +47,8 @@ public:
                 // TODO: move the particles that just left through the face from
                 // patchGhostParticles to levelGhostParticles (the stock).
                 break;
-            default: break; // open does not act at the other moments
+            case ParticleBoundaryStage::Init:
+            case ParticleBoundaryStage::Refill: break; // open does not act then
         }
     }
 };

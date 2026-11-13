@@ -94,14 +94,13 @@ public:
     {
         // Boundary conditions are registered for rho, B and E, and one particle condition per ion
         // population. The ion flux has none: the moments are not read in the physical ghosts.
-        std::vector<core::HybridQuantity::Scalar> scalarQuantities = {
+        std::vector<core::HybridQuantity::Scalar> const scalarQuantities = {
             core::HybridQuantity::Scalar::rho,
         };
-        std::vector<core::HybridQuantity::Vector> vectorQuantities = {
+        std::vector<core::HybridQuantity::Vector> const vectorQuantities = {
             core::HybridQuantity::Vector::B,
             core::HybridQuantity::Vector::E,
         };
-        std::vector<std::string> populationNames = state.ions.populationNames();
 
         if (dict.contains("grid"))
             core::validatePhysicalBoundariesDeclared<dimension>(dict["grid"]);
@@ -109,7 +108,9 @@ public:
         boundaryManager    = std::make_shared<boundary_manager_type>(
             has_bcs ? dict["grid"]["domain_boundaries"] : PHARE::initializer::PHAREDict{},
             scalarQuantities, vectorQuantities,
-            typename boundary_manager_type::Options{.populationNames = populationNames});
+            typename boundary_manager_type::Options{
+                .populationNames = state.ions.populationNames(),
+            });
     }
 
 

@@ -259,6 +259,7 @@ namespace core
         NO_DISCARD std::vector<std::string> populationNames() const
         {
             std::vector<std::string> names;
+            names.reserve(populations_.size());
             std::transform(std::begin(populations_), std::end(populations_),
                            std::back_inserter(names),
                            [](auto const& pop) { return pop.name(); });

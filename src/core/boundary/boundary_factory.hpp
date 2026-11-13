@@ -135,25 +135,9 @@ private:
         {
             // B and E follow a perfect conductor, as in MHD. The ion moments are not read in the
             // physical ghost cells: the particles give their values on the domain nodes.
-            register_scalars_none_(boundary, quantities);
-            for (auto const quantity : quantities.vectors)
-            {
-                switch (quantity)
-                {
-                    case (physical_quantity_type::Vector::B):
-                        boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
-                        break;
-                    case (physical_quantity_type::Vector::E):
-                        boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::AntiSymmetric>(quantity);
-                        break;
-                    default:
-                        boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
-                            quantity);
-                        break;
-                }
-            }
+            register_hybrid_fields_<FieldBoundaryConditionType::DivergenceFreeTransverseNeumann,
+                                    FieldBoundaryConditionType::AntiSymmetric>(boundary,
+                                                                               quantities);
             register_particles_<ParticleBoundaryConditionType::Reflective>(boundary, quantities);
         }
         else if constexpr (!IsMHDQuantity<physical_quantity_type>)
@@ -201,26 +185,8 @@ private:
         {
             // Zero-gradient B and E: the particles kept beyond the face are pushed with the field
             // just inside. The ion moments are not read in the physical ghost cells.
-            register_scalars_none_(boundary, quantities);
-            for (auto const quantity : quantities.vectors)
-            {
-                switch (quantity)
-                {
-                    case (physical_quantity_type::Vector::B):
-                        boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
-                        break;
-                    case (physical_quantity_type::Vector::E):
-                        boundary
-                            ->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
-                                quantity);
-                        break;
-                    default:
-                        boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
-                            quantity);
-                        break;
-                }
-            }
+            register_hybrid_fields_<FieldBoundaryConditionType::DivergenceFreeTransverseNeumann,
+                                    FieldBoundaryConditionType::Neumann>(boundary, quantities);
             register_particles_<ParticleBoundaryConditionType::Open>(boundary, quantities);
         }
         else if constexpr (!IsMHDQuantity<physical_quantity_type>)
@@ -442,6 +408,25 @@ private:
                     boundary->template registerParticleCondition<
                         ParticleBoundaryConditionType::Open>(popName);
             }
+        }
+    }
+
+    /** @brief Hybrid fields of a face: B gets @p BType, E gets @p EType, the other vectors and
+     *  all the scalars get None. */
+    template<FieldBoundaryConditionType BType, FieldBoundaryConditionType EType>
+    static void register_hybrid_fields_(boundary_ptr_type& boundary,
+                                        _model_menu_type const& quantities)
+    {
+        register_scalars_none_(boundary, quantities);
+        for (auto const quantity : quantities.vectors)
+        {
+            if (quantity == physical_quantity_type::Vector::B)
+                boundary->template registerFieldCondition<BType>(quantity);
+            else if (quantity == physical_quantity_type::Vector::E)
+                boundary->template registerFieldCondition<EType>(quantity);
+            else
+                boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                    quantity);
         }
     }
 

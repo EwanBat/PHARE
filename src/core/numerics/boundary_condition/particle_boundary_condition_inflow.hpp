@@ -73,7 +73,7 @@ public:
             case ParticleBoundaryStage::Moments:
                 // TODO: deposit the stock, only the part in front of this patch's own cells.
                 break;
-            default: break; // inflow does not act at the other moments
+            case ParticleBoundaryStage::Leavers: break; // inflow does not act then
         }
     }
 

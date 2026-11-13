@@ -122,8 +122,10 @@ private:
                && "ParticleBoundaryPatchStrategy: IDs must be registered before use");
     }
 
-    /** @brief The particle boundary condition of the population on the boundary of @p boundaryBox. */
-    std::shared_ptr<boundary_condition_type> getCondition_(boundary_box_type const& boundaryBox) const
+    /** @brief The particle boundary condition of the population on the boundary of
+     *  @p boundaryBox. */
+    std::shared_ptr<boundary_condition_type>
+    getCondition_(boundary_box_type const& boundaryBox) const
     {
         auto condition = boundaryBox.boundary.getParticleCondition(populationName_);
         if (!condition)

@@ -102,6 +102,12 @@ namespace solver
                 core::depositParticles(ions, layout, interpolate_, core::DomainDeposit{});
             }
 
+            // add what the physical faces give to the moments (the stock beyond an inflow or
+            // open face, the mirror of a reflective face), as the solver does after each push.
+            // Root level only, it does nothing on the other levels.
+            hybMessenger.applyParticleBoundaryConditions(ions, level, initDataTime,
+                                                         core::ParticleBoundaryStage::Moments);
+
             // at this point flux and density is computed for all pops
             // but nodes on ghost box overlaps are not complete because they lack
             // contribution of neighbor particles.
