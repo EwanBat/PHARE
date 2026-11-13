@@ -124,6 +124,12 @@ namespace amr
         {
         }
 
+        void applyParticleBoundaryConditions(IonsT& /*ions*/, level_t& /*level*/,
+                                             double const /*time*/,
+                                             core::ParticleBoundaryStage const /*stage*/) override
+        {
+        }
+
 
 
         void firstStep(IPhysicalModel& /*model*/, level_t& /*level*/, double const /*currentTime*/,

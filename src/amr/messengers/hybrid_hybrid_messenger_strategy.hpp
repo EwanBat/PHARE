@@ -280,6 +280,12 @@ namespace amr
                 copyLevelGhostOldToPushable_(*level, model);
             }
 
+            // the new root patches start without a stock (regrid only copies the domain
+            // particles), so draw it again
+            if (isRegriddingL0)
+                applyParticleBoundaryConditions(hybridModel.state.ions, *level, initDataTime,
+                                                core::ParticleBoundaryStage::Init);
+
             // levelGhostNew will be refined in next firstStep
 
             // after filling the new level with the regrid schedule, some
@@ -382,6 +388,33 @@ namespace amr
             for (auto patch : resourcesManager_->enumerate(level, ions))
                 for (auto& pop : ions)
                     pop.patchGhostParticles().clear();
+        }
+
+
+
+        /**
+         * @brief Apply the particle boundary conditions that act at this moment of the step, for
+         * every population, on every patch of @p level.
+         *
+         * Root level only: on a refined level, levelGhostParticles already holds the particles
+         * that come from the coarser level, so it cannot also hold the stock of a face.
+         */
+        void applyParticleBoundaryConditions(IonsT& ions, level_t& level, double const time,
+                                             core::ParticleBoundaryStage const stage) override
+        {
+            PHARE_LOG_SCOPE(1, "HybridHybridMessengerStrategy::applyParticleBoundaryConditions");
+
+            if (level.getLevelNumber() != rootLevelNumber)
+                return;
+
+            assert(partBoundaryStrats_.size() == ions.size());
+            for (auto& patch : level)
+                for (std::size_t i = 0; i < ions.size(); ++i)
+                {
+                    // the strategies were made in the order of the populations
+                    assert(partBoundaryStrats_[i]->populationName() == ions[i].name());
+                    partBoundaryStrats_[i]->apply(*patch, stage, time);
+                }
         }
 
 
@@ -611,9 +644,10 @@ namespace amr
             // TODO : still useful?
             elecGhostsRefiners_.fill(hybridModel.state.electromag.E, levelNumber, initDataTime);
 
-            // at some point in the future levelGhostParticles could be filled with injected
-            // particles depending on the domain boundary condition.
-            //
+            // first draw of the stock beyond the inflow faces
+            applyParticleBoundaryConditions(hybridModel.state.ions, level, initDataTime,
+                                            core::ParticleBoundaryStage::Init);
+
             // J ghosts need no filling here: J is computed locally by Ampere on
             // physical+1, exactly the layer the Ohm laplacian reads.
             //
@@ -1214,7 +1248,7 @@ namespace amr
         VectorFieldRefinePatchStrategyList elecInitPatchStrats_;
 
         using ParticleBoundaryPatchStrategyT
-            = ParticleBoundaryPatchStrategy<GridLayoutT, BoundaryManagerT>;
+            = ParticleBoundaryPatchStrategy<GridLayoutT, GridT, BoundaryManagerT>;
         using ParticleBoundaryPatchStrategyList
             = std::vector<std::shared_ptr<ParticleBoundaryPatchStrategyT>>;
         ParticleBoundaryPatchStrategyList partBoundaryStrats_; //!< one per ion population

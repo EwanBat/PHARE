@@ -4,6 +4,7 @@
 #include "phare_mpi.hpp" // IWYU pragma: keep
 
 #include "amr/messengers/messenger_info.hpp"
+#include "core/numerics/boundary_condition/particle_boundary_condition.hpp"
 
 #include <SAMRAI/hier/PatchLevel.h>
 #include <SAMRAI/hier/PatchHierarchy.h>
@@ -116,6 +117,12 @@ namespace amr
         virtual void fillFluxBorders(IonsT& ions, level_t& level, double const fillTime)    = 0;
         virtual void fillDensityBorders(IonsT& ions, level_t& level, double const fillTime) = 0;
         virtual void fillIonBorders(IonsT& ions, level_t& level, double const fillTime)     = 0;
+
+        // apply the particle boundary conditions that act at this moment of the step
+        virtual void applyParticleBoundaryConditions(IonsT& ions, level_t& level,
+                                                     double const time,
+                                                     core::ParticleBoundaryStage const stage)
+            = 0;
 
 
         std::string name() const { return stratname_; }

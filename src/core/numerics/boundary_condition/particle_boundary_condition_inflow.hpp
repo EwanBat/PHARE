@@ -17,14 +17,15 @@ namespace PHARE::core
  *
  * It holds the inflow plasma given by the user: density, bulk velocity and thermal velocity.
  *
- * Physics not implemented yet: does nothing.
+ * Physics not implemented yet: the moments are chosen, the work is not written.
  */
-template<typename ParticleArrayT, typename GridLayoutT>
+template<typename ParticleArrayT, typename FieldT, typename GridLayoutT>
 class ParticleBoundaryConditionInflow
-    : public IParticleBoundaryCondition<ParticleArrayT, GridLayoutT>
+    : public IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>
 {
 public:
-    using Super = IParticleBoundaryCondition<ParticleArrayT, GridLayoutT>;
+    using Super     = IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>;
+    using data_type = Super::data_type;
 
     /**
      * @param density inflow density.
@@ -43,15 +44,37 @@ public:
     NO_DISCARD std::array<double, 3> const& velocity() const { return velocity_; }
     NO_DISCARD std::array<double, 3> const& thermalVelocity() const { return thermalVelocity_; }
 
+    /** @brief Inflow acts at Init, Refill and Moments. */
+    bool actsAt(ParticleBoundaryStage const stage) const override
+    {
+        return stage == ParticleBoundaryStage::Init or stage == ParticleBoundaryStage::Refill
+               or stage == ParticleBoundaryStage::Moments;
+    }
+
     ParticleBoundaryConditionType getType() const override
     {
         return ParticleBoundaryConditionType::Inflow;
     }
 
-    void apply(ParticleArrayT& /*particleArray*/, BoundaryLocation const /*boundaryLocation*/,
-               Box<std::uint32_t, Super::dimension> const& /*localGhostBox*/,
-               GridLayoutT const& /*gridLayout*/, [[maybe_unused]] double const /*time*/) override
+    void apply(ParticleBoundaryStage const stage, data_type& /*data*/,
+               BoundaryLocation const /*location*/,
+               Box<int, Super::dimension> const& /*ghostBox*/, GridLayoutT const& /*gridLayout*/,
+               double const /*time*/) override
     {
+        switch (stage)
+        {
+            case ParticleBoundaryStage::Init:
+                // TODO: fill the box with particles drawn from the inflow plasma.
+                break;
+            case ParticleBoundaryStage::Refill:
+                // TODO: the push left an empty strip at the far edge of the stock.
+                // Remove the stock in the box and draw it again, full.
+                break;
+            case ParticleBoundaryStage::Moments:
+                // TODO: deposit the stock, only the part in front of this patch's own cells.
+                break;
+            default: break; // inflow does not act at the other moments
+        }
     }
 
 private:

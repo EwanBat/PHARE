@@ -16,34 +16,35 @@ struct ParticleBoundaryConditionSelector;
 template<>
 struct ParticleBoundaryConditionSelector<ParticleBoundaryConditionType::None>
 {
-    template<typename ParticleArrayT, typename GridLayoutT>
-    using type = ParticleBoundaryConditionNone<ParticleArrayT, GridLayoutT>;
+    template<typename ParticleArrayT, typename FieldT, typename GridLayoutT>
+    using type = ParticleBoundaryConditionNone<ParticleArrayT, FieldT, GridLayoutT>;
 };
 
 template<>
 struct ParticleBoundaryConditionSelector<ParticleBoundaryConditionType::Reflective>
 {
-    template<typename ParticleArrayT, typename GridLayoutT>
-    using type = ParticleBoundaryConditionReflective<ParticleArrayT, GridLayoutT>;
+    template<typename ParticleArrayT, typename FieldT, typename GridLayoutT>
+    using type = ParticleBoundaryConditionReflective<ParticleArrayT, FieldT, GridLayoutT>;
 };
 
 template<>
 struct ParticleBoundaryConditionSelector<ParticleBoundaryConditionType::Open>
 {
-    template<typename ParticleArrayT, typename GridLayoutT>
-    using type = ParticleBoundaryConditionOpen<ParticleArrayT, GridLayoutT>;
+    template<typename ParticleArrayT, typename FieldT, typename GridLayoutT>
+    using type = ParticleBoundaryConditionOpen<ParticleArrayT, FieldT, GridLayoutT>;
 };
 
 template<>
 struct ParticleBoundaryConditionSelector<ParticleBoundaryConditionType::Inflow>
 {
-    template<typename ParticleArrayT, typename GridLayoutT>
-    using type = ParticleBoundaryConditionInflow<ParticleArrayT, GridLayoutT>;
+    template<typename ParticleArrayT, typename FieldT, typename GridLayoutT>
+    using type = ParticleBoundaryConditionInflow<ParticleArrayT, FieldT, GridLayoutT>;
 };
 
-template<ParticleBoundaryConditionType type, typename ParticleArrayT, typename GridLayoutT>
+template<ParticleBoundaryConditionType type, typename ParticleArrayT, typename FieldT,
+         typename GridLayoutT>
 using ParticleBoundaryCondition
-    = ParticleBoundaryConditionSelector<type>::template type<ParticleArrayT, GridLayoutT>;
+    = ParticleBoundaryConditionSelector<type>::template type<ParticleArrayT, FieldT, GridLayoutT>;
 
 } // namespace PHARE::core
 

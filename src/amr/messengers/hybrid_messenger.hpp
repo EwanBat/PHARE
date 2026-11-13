@@ -342,6 +342,18 @@ namespace amr
             strat_->fillIonBorders(ions, level, fillTime);
         }
 
+        /**
+         * @brief Apply the particle boundary conditions that act at this moment of the step.
+         *
+         * Only the faces whose condition acts at @p stage do something. See
+         * core::ParticleBoundaryStage for the list of moments and who acts when.
+         */
+        void applyParticleBoundaryConditions(IonsT& ions, level_t& level, double const time,
+                                             core::ParticleBoundaryStage const stage)
+        {
+            strat_->applyParticleBoundaryConditions(ions, level, time, stage);
+        }
+
         /* -------------------------------------------------------------------------
                             End HybridMessenger Interface
            -------------------------------------------------------------------------*/

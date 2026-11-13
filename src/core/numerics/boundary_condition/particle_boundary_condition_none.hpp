@@ -9,20 +9,25 @@ namespace PHARE::core
 /**
  * @brief No-op particle boundary condition: leaves particles untouched.
  */
-template<typename ParticleArrayT, typename GridLayoutT>
-class ParticleBoundaryConditionNone : public IParticleBoundaryCondition<ParticleArrayT, GridLayoutT>
+template<typename ParticleArrayT, typename FieldT, typename GridLayoutT>
+class ParticleBoundaryConditionNone : public IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>
 {
 public:
-    using Super = IParticleBoundaryCondition<ParticleArrayT, GridLayoutT>;
+    using Super     = IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>;
+    using data_type = Super::data_type;
+
+    /** @brief Never acts. */
+    bool actsAt(ParticleBoundaryStage const /*stage*/) const override { return false; }
 
     ParticleBoundaryConditionType getType() const override
     {
         return ParticleBoundaryConditionType::None;
     }
 
-    void apply(ParticleArrayT& /*particleArray*/, BoundaryLocation const /*boundaryLocation*/,
-               Box<std::uint32_t, Super::dimension> const& /*localGhostBox*/,
-               GridLayoutT const& /*gridLayout*/, [[maybe_unused]] double const /*time*/) override
+    void apply(ParticleBoundaryStage const /*stage*/, data_type& /*data*/,
+               BoundaryLocation const /*location*/,
+               Box<int, Super::dimension> const& /*ghostBox*/, GridLayoutT const& /*gridLayout*/,
+               double const /*time*/) override
     {
     }
 };

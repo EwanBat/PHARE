@@ -40,7 +40,8 @@ public:
     using scalar_field_condition_type = IFieldBoundaryCondition<field_type, GridLayoutT>;
     using vector_field_condition_type = IFieldBoundaryCondition<vector_field_type, GridLayoutT>;
     using particle_array_type = ParticleArrayT;
-    using particle_condition_type = IParticleBoundaryCondition<particle_array_type, GridLayoutT>;
+    using particle_condition_type
+        = IParticleBoundaryCondition<particle_array_type, field_type, GridLayoutT>;
 
     Boundary() = delete;
     Boundary(BoundaryType type, BoundaryLocation location)
@@ -130,7 +131,7 @@ public:
     void registerParticleCondition(std::string const& populationName, Args&&... args)
     {
         particle_conditions_[populationName]
-            = std::make_shared<ParticleBoundaryCondition<type, particle_array_type, GridLayoutT>>(
+            = std::make_shared<ParticleBoundaryCondition<type, particle_array_type, field_type, GridLayoutT>>(
                 std::forward<Args>(args)...);
     }
 
