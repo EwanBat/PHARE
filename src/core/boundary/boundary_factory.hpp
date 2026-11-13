@@ -11,6 +11,7 @@
 #include "initializer/data_provider.hpp"
 #include "initializer/dict_utils.hpp"
 
+#include <algorithm>
 #include <array>
 #include <concepts>
 #include <memory>
@@ -353,8 +354,15 @@ private:
      *
      *  The magnetic field is imposed through the motional electric field E = -v x B on the
      *  boundary, and its ghosts are filled with the inflow B by a divergence-free transverse
-     *  Dirichlet condition. Each ion population gets an inflow particle condition holding the
-     *  inflow density, bulk velocity and thermal velocity, which draws the incoming particles.
+     *  Dirichlet condition. B and the velocity used for E belong to the face.
+     *
+     *  Particles, population by population:
+     *
+     *      listed in data["populations"]   ->  Inflow, with its own density, velocity, vth
+     *      not listed                      ->  Open: its particles leave freely
+     *
+     *  The wind is usually made of a few populations only (protons, alphas). The others must
+     *  not be drawn at this face, but their particles may still leave through it.
      *  The ion moments are not imposed: the particles give them.
      */
     static void register_hybrid_inflow_conditions_(boundary_ptr_type& boundary,
@@ -366,15 +374,13 @@ private:
                 "HybridInflow boundary type is only supported by the hybrid model.");
         else
         {
-            for (auto const key : {"density", "velocity", "B", "vth"})
+            for (auto const key : {"velocity", "B", "populations"})
                 if (!data.contains(key))
                     throw std::runtime_error(std::string{"BoundaryFactory: HybridInflow requires '"}
                                              + key + "'.");
 
-            auto const density = data["density"].template to<double>();
-            auto const v       = initializer::parseDimXYZType<double, 3>(data, "velocity");
-            auto const B       = initializer::parseDimXYZType<double, 3>(data, "B");
-            auto const vth     = initializer::parseDimXYZType<double, 3>(data, "vth");
+            auto const v = initializer::parseDimXYZType<double, 3>(data, "velocity");
+            auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
 
             register_scalars_none_(boundary, quantities);
             for (auto const quantity : quantities.vectors)
@@ -401,8 +407,41 @@ private:
                         break;
                 }
             }
-            register_particles_<ParticleBoundaryConditionType::Inflow>(boundary, quantities,
-                                                                       density, v, vth);
+            register_hybrid_inflow_particles_(boundary, data["populations"], quantities);
+        }
+    }
+
+    /** @brief Particle conditions of a hybrid inflow face: Inflow for the populations of the
+     *  wind, Open for the others. See register_hybrid_inflow_conditions_. */
+    static void register_hybrid_inflow_particles_(boundary_ptr_type& boundary,
+                                                  initializer::PHAREDict const& windPopulations,
+                                                  _model_menu_type const& quantities)
+    {
+        if constexpr (!std::is_void_v<ParticleArrayT>)
+        {
+            auto const& popNames = quantities.populationNames;
+
+            // a typo in a population name would silently give no wind: refuse it
+            for (auto const& [name, _] : windPopulations)
+                if (std::find(popNames.begin(), popNames.end(), name) == popNames.end())
+                    throw std::runtime_error("BoundaryFactory: HybridInflow lists population '"
+                                             + name + "', which the model does not have.");
+
+            for (auto const& popName : popNames)
+            {
+                if (windPopulations.contains(popName))
+                {
+                    auto const& wind   = windPopulations[popName];
+                    auto const density = wind["density"].template to<double>();
+                    auto const v   = initializer::parseDimXYZType<double, 3>(wind, "velocity");
+                    auto const vth = initializer::parseDimXYZType<double, 3>(wind, "vth");
+                    boundary->template registerParticleCondition<
+                        ParticleBoundaryConditionType::Inflow>(popName, density, v, vth);
+                }
+                else
+                    boundary->template registerParticleCondition<
+                        ParticleBoundaryConditionType::Open>(popName);
+            }
         }
     }
 

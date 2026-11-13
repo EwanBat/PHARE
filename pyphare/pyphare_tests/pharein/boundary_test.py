@@ -89,10 +89,9 @@ class TestBoundaryStructural(unittest.TestCase):
     def _hybrid_inflow(self, **overrides):
         bc = {
             "type": "hybrid-inflow",
-            "density": 1.0,
             "velocity": 2.0,
             "B": [1.0, 0.0, 0.0],
-            "vth": [0.3, 0.3, 0.3],
+            "populations": {"protons": {"density": 1.0, "vth": [0.3, 0.3, 0.3]}},
         }
         bc.update(overrides)
         return bc
@@ -108,20 +107,51 @@ class TestBoundaryStructural(unittest.TestCase):
         resolved = self._resolve_hybrid(self._hybrid_inflow())
         bc = resolved["xlower"]
         self.assertIsInstance(bc, boundary.HybridInflowBoundary)
-        self.assertEqual(1.0, bc.density)
         self.assertEqual((2.0, 0.0, 0.0), bc.velocity)
         self.assertEqual((1.0, 0.0, 0.0), bc.B)
-        self.assertEqual((0.3, 0.3, 0.3), bc.vth)
+        protons = bc.populations["protons"]
+        self.assertEqual(1.0, protons["density"])
+        self.assertEqual((2.0, 0.0, 0.0), protons["velocity"])  # face velocity by default
+        self.assertEqual((0.3, 0.3, 0.3), protons["vth"])
 
-    def test_hybrid_inflow_requires_vth(self):
+    def test_hybrid_inflow_population_velocity(self):
+        pops = {
+            "protons": {"density": 1.0, "vth": [0.3, 0.3, 0.3]},
+            "alpha": {"density": 0.04, "vth": [0.1, 0.1, 0.1], "velocity": 2.2},
+        }
+        bc = self._resolve_hybrid(self._hybrid_inflow(populations=pops))["xlower"]
+        self.assertEqual((2.0, 0.0, 0.0), bc.populations["protons"]["velocity"])
+        self.assertEqual((2.2, 0.0, 0.0), bc.populations["alpha"]["velocity"])
+
+    def test_hybrid_inflow_requires_populations(self):
         bc = self._hybrid_inflow()
-        del bc["vth"]
+        del bc["populations"]
         with self.assertRaises(KeyError):
             self._resolve_hybrid(bc)
 
-    def test_hybrid_inflow_negative_vth_rejected(self):
+    def test_hybrid_inflow_empty_populations_rejected(self):
         with self.assertRaises(ValueError):
-            self._resolve_hybrid(self._hybrid_inflow(vth=[0.3, -0.1, 0.3]))
+            self._resolve_hybrid(self._hybrid_inflow(populations={}))
+
+    def test_hybrid_inflow_requires_vth(self):
+        pops = {"protons": {"density": 1.0}}
+        with self.assertRaises(KeyError):
+            self._resolve_hybrid(self._hybrid_inflow(populations=pops))
+
+    def test_hybrid_inflow_unknown_population_key_rejected(self):
+        pops = {"protons": {"density": 1.0, "vth": [0.3, 0.3, 0.3], "temperature": 1.0}}
+        with self.assertRaises(ValueError):
+            self._resolve_hybrid(self._hybrid_inflow(populations=pops))
+
+    def test_hybrid_inflow_negative_vth_rejected(self):
+        pops = {"protons": {"density": 1.0, "vth": [0.3, -0.1, 0.3]}}
+        with self.assertRaises(ValueError):
+            self._resolve_hybrid(self._hybrid_inflow(populations=pops))
+
+    def test_hybrid_inflow_population_velocity_must_enter(self):
+        pops = {"protons": {"density": 1.0, "vth": [0.3, 0.3, 0.3], "velocity": -1.0}}
+        with self.assertRaises(ValueError):
+            self._resolve_hybrid(self._hybrid_inflow(populations=pops))
 
     def test_hybrid_inflow_velocity_must_enter(self):
         with self.assertRaises(ValueError):

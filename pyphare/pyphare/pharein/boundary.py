@@ -161,37 +161,92 @@ def _normalize_thermal_velocity(location, vth, ndim):
     return v
 
 
+def _normalize_inflow_population(location, name, pop, face_velocity, ndim):
+    """Return the wind of one population as a dict {density, velocity, vth}.
+
+    'density' and 'vth' are required. 'velocity' is optional: without it, the population
+    moves with the face velocity.
+    """
+    if not isinstance(name, str):
+        raise TypeError(
+            f"population names at inflow boundary '{location}' must be strings, got {name!r}"
+        )
+    if not isinstance(pop, dict):
+        raise TypeError(
+            f"population '{name}' at inflow boundary '{location}' must be a dict, got {pop!r}"
+        )
+
+    allowed = ("density", "vth", "velocity")
+    unexpected = [key for key in pop if key not in allowed]
+    if unexpected:
+        raise ValueError(
+            f"population '{name}' at inflow boundary '{location}' does not take "
+            f"{unexpected}; expected keys: {list(allowed)}"
+        )
+    for key in ("density", "vth"):
+        if key not in pop:
+            raise KeyError(
+                f"population '{name}' at inflow boundary '{location}' requires '{key}'"
+            )
+
+    velocity = pop.get("velocity")
+    return {
+        "density": _normalize_inflow_scalar(
+            location, f"{name}/density", pop["density"], ndim, positive=True
+        ),
+        "velocity": face_velocity
+        if velocity is None
+        else _normalize_inflow_velocity(location, velocity, ndim),
+        "vth": _normalize_thermal_velocity(location, pop["vth"], ndim),
+    }
+
+
 @dataclass
 class HybridInflowBoundary(Boundary):
     """Inflow of a drifting Maxwellian plasma into a hybrid simulation.
 
-    B is imposed, E = -v x B on the face, and the particles entering the domain are drawn
-    from the density, bulk velocity and thermal velocity given here.
+    The face holds B and the bulk velocity of the wind. B is imposed and E = -velocity x B.
+
+    'populations' gives the wind of each population that enters through the face, for
+    example {"protons": {"density": 1.0, "vth": [...]}, "alpha": {...}}. Each one takes a
+    'density', a 'vth' and an optional 'velocity' (default: the face velocity). Particles
+    of these populations are drawn beyond the face and enter the domain.
+
+    Populations that are not listed do not enter: for them the face is open, their
+    particles leave freely.
     """
 
     type = "hybrid-inflow"
     models = frozenset({"HybridModel"})
-    density: object
     velocity: object
     B: object
-    vth: object
+    populations: object
     location: InitVar[str]
     ndim: InitVar[int]
 
     def __post_init__(self, location, ndim):
-        self.density = _normalize_inflow_scalar(
-            location, "density", self.density, ndim, positive=True
-        )
         self.velocity = _normalize_inflow_velocity(location, self.velocity, ndim)
         self.B = _normalize_inflow_vector(location, "B", self.B, ndim)
-        self.vth = _normalize_thermal_velocity(location, self.vth, ndim)
+
+        if not isinstance(self.populations, dict) or not self.populations:
+            raise ValueError(
+                f"'populations' at inflow boundary '{location}' must be a non-empty dict "
+                f"{{population name: {{density, vth[, velocity]}}}}, got {self.populations!r}"
+            )
+        self.populations = {
+            name: _normalize_inflow_population(location, name, pop, self.velocity, ndim)
+            for name, pop in self.populations.items()
+        }
 
     def populate_dict(self, dp, bc_path, ndim):
         super().populate_dict(dp, bc_path, ndim)
-        dp.add_double(f"{bc_path}/density", self.density)
         _add_inflow_vector(dp, bc_path, "velocity", self.velocity)
         _add_inflow_vector(dp, bc_path, "B", self.B)
-        _add_inflow_vector(dp, bc_path, "vth", self.vth)
+        for name, pop in self.populations.items():
+            pop_path = f"{bc_path}/populations/{name}"
+            dp.add_double(f"{pop_path}/density", pop["density"])
+            _add_inflow_vector(dp, pop_path, "velocity", pop["velocity"])
+            _add_inflow_vector(dp, pop_path, "vth", pop["vth"])
 
 
 # ------------------------------------------------------------------------------
