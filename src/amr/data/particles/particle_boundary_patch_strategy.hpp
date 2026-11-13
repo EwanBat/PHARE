@@ -1,15 +1,20 @@
 #ifndef PHARE_AMR_PARTICLE_BOUNDARY_PATCH_STRATEGY_HPP
 #define PHARE_AMR_PARTICLE_BOUNDARY_PATCH_STRATEGY_HPP
 
+#include "amr/data/field/field_data.hpp"
+#include "amr/data/particles/particles_data.hpp"
+#include "amr/data/tensorfield/tensor_field_data.hpp"
 #include "amr/utilities/boundary/physical_boundary_boxes.hpp"
 
 #include "SAMRAI/hier/IntVector.h"
 #include "SAMRAI/hier/Patch.h"
 
 #include "core/def.hpp"
+#include "core/numerics/boundary_condition/particle_boundary_condition.hpp"
 
 #include <cassert>
 #include <cstddef>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -26,28 +31,34 @@ namespace PHARE::amr
  * population.
  *
  * Unlike FieldRefinePatchStrategy it is not a SAMRAI::xfer::RefinePatchStrategy and no schedule
- * calls it. Particle boundary conditions act at three different moments of a time step, so the
- * messenger calls the three methods below by hand, on patches whose data is already set.
- *
- * "Boundary particles" are the particles kept in the ghost cells beyond a physical boundary. They
- * live in the levelGhostParticles array of the population, which is otherwise unused on the root
- * level.
+ * calls it. Particle boundary conditions act at different moments of a time step, so the
+ * messenger calls apply() by hand, on patches whose data is already set, and says which moment
+ * it is (core::ParticleBoundaryStage).
  *
  * One strategy serves one population. It keeps the name of the population, to find its particle
  * boundary condition, and the patch data ids of its particles, density and flux, to reach them on
- * a patch. So its methods only need the patch.
+ * a patch. So apply() only needs the patch.
  *
  * @tparam GridLayoutT The grid layout type.
+ * @tparam GridT The grid type, which holds the data of a field.
  * @tparam BoundaryManagerT Manager responsible for providing boundary condition objects.
  */
-template<typename GridLayoutT, typename BoundaryManagerT>
+template<typename GridLayoutT, typename GridT, typename BoundaryManagerT>
 class ParticleBoundaryPatchStrategy
 {
 public:
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
-    using boundary_type     = BoundaryManagerT::boundary_type;
-    using boundary_box_type = PhysicalBoundaryBox<dimension, boundary_type>;
+    using boundary_type           = BoundaryManagerT::boundary_type;
+    using boundary_box_type       = PhysicalBoundaryBox<dimension, boundary_type>;
+    using boundary_condition_type = boundary_type::particle_condition_type;
+    using data_type               = boundary_condition_type::data_type;
+
+    using particle_array_type = boundary_type::particle_array_type;
+    using particles_data_type = ParticlesData<particle_array_type>;
+    using field_data_type     = FieldData<GridLayoutT, GridT>;
+    using vecfield_data_type
+        = TensorFieldData<1, GridLayoutT, GridT, typename boundary_type::physical_quantity_type>;
 
     ParticleBoundaryPatchStrategy(BoundaryManagerT& boundaryManager, std::string populationName)
         : boundaryManager_{boundaryManager}
@@ -71,44 +82,37 @@ public:
     NO_DISCARD std::string const& populationName() const { return populationName_; }
 
     /**
-     * @brief Fill the boundary particles of the population on @p patch.
+     * @brief Apply, on @p patch, the boundary conditions that act at this moment of the step.
      *
-     * An inflow boundary draws its particles in the whole box, the part in front of a same-level
-     * neighbour included, so that a particle can enter the patch diagonally.
+     * For each box of ghost cells beyond a face, the condition of that face is asked if it acts
+     * at @p stage. If not, the box is skipped. So, for example, at the Refill moment only the
+     * inflow faces do something.
+     *
+     * @param patch the patch. Nothing happens if it does not touch a physical face.
+     * @param stage the moment of the step.
+     * @param time the time of the step.
      */
-    void fillBoundaryParticles(SAMRAI::hier::Patch const& patch, double const /*time*/)
+    void apply(SAMRAI::hier::Patch const& patch, core::ParticleBoundaryStage const stage,
+               double const time)
     {
-        forEachCondition_(patch, [](auto& /*condition*/, boundary_box_type const& /*boundaryBox*/) {
-            // nothing yet
-        });
-    }
+        assertIDsSet_();
 
-    /**
-     * @brief Deposit the boundary particles of the population on its density and flux.
-     *
-     * To be called after the push and before the border sums. Particles drawn by an inflow boundary
-     * exist in every patch that sees the box, so each patch must deposit only those in front of its
-     * own cells.
-     */
-    void depositBoundaryParticles(SAMRAI::hier::Patch const& patch, double const /*time*/)
-    {
-        forEachCondition_(patch, [](auto& /*condition*/, boundary_box_type const& /*boundaryBox*/) {
-            // nothing yet
-        });
-    }
+        forEachPhysicalBoundaryBox<dimension>(
+            patch, ghostWidth_, boundaryManager_, [&](boundary_box_type const& boundaryBox) {
+                auto const condition = getCondition_(boundaryBox);
+                if (!condition->actsAt(stage))
+                    return;
 
-    /**
-     * @brief Treat the particles of the population that left @p patch through a physical boundary
-     * during the last push.
-     *
-     * To be called after the real push and before the particle exchange, which clears
-     * patchGhostParticles. An outflow boundary moves them to the boundary particles.
-     */
-    void collectLeavingParticles(SAMRAI::hier::Patch const& patch, double const /*time*/)
-    {
-        forEachCondition_(patch, [](auto& /*condition*/, boundary_box_type const& /*boundaryBox*/) {
-            // nothing yet
-        });
+                // the data is reached only here, so a face with nothing to do costs nothing
+                auto& particles = getParticlesData_(patch);
+                auto flux       = vecfield_data_type::getTensorField(patch, fluxId_);
+                data_type data{particles.domainParticles, particles.patchGhostParticles,
+                               particles.levelGhostParticles,
+                               *field_data_type::getField(patch, densityId_), flux};
+
+                condition->apply(stage, data, boundaryBox.location, boundaryBox.box,
+                                 field_data_type::getLayout(patch, densityId_), time);
+            });
     }
 
 private:
@@ -118,35 +122,37 @@ private:
                && "ParticleBoundaryPatchStrategy: IDs must be registered before use");
     }
 
-    /**
-     * @brief Call @p fn with the particle boundary condition of the population and the box it
-     * rules, for each box of particle ghost cells of @p patch that lies outside the physical domain.
-     */
-    template<typename Fn>
-    void forEachCondition_(SAMRAI::hier::Patch const& patch, Fn&& fn)
+    /** @brief The particle boundary condition of the population on the boundary of @p boundaryBox. */
+    std::shared_ptr<boundary_condition_type> getCondition_(boundary_box_type const& boundaryBox) const
     {
-        assertIDsSet_();
+        auto condition = boundaryBox.boundary.getParticleCondition(populationName_);
+        if (!condition)
+            throw std::runtime_error("Particle boundary condition not found for population "
+                                     + populationName_ + ".");
+        return condition;
+    }
 
-        SAMRAI::hier::IntVector const ghostWidth{
-            patch.getDim(), static_cast<int>(GridLayoutT::options.particle_ghost_width)};
-
-        forEachPhysicalBoundaryBox<dimension>(
-            patch, ghostWidth, boundaryManager_, [&](boundary_box_type const& boundaryBox) {
-                auto const condition = boundaryBox.boundary.getParticleCondition(populationName_);
-                if (!condition)
-                    throw std::runtime_error(
-                        "Particle boundary condition not found for population " + populationName_
-                        + ".");
-
-                fn(*condition, boundaryBox);
-            });
+    /** @brief The particle arrays of the population on @p patch. */
+    particles_data_type& getParticlesData_(SAMRAI::hier::Patch const& patch) const
+    {
+        auto particles
+            = std::dynamic_pointer_cast<particles_data_type>(patch.getPatchData(particlesId_));
+        if (!particles)
+            throw std::runtime_error("cannot cast to ParticlesData");
+        return *particles;
     }
 
     BoundaryManagerT& boundaryManager_; //!< a reference to the boundary manager
     std::string populationName_;        //!< the population this strategy serves
-    int particlesId_ = -1;              //!< patch data id of the population's particles
-    int densityId_   = -1;              //!< patch data id of the population's particle density
-    int fluxId_      = -1;              //!< patch data id of the population's flux
+
+    //! width of the particle ghost layer, the layer the boundary conditions act on
+    SAMRAI::hier::IntVector const ghostWidth_{
+        SAMRAI::tbox::Dimension{static_cast<unsigned short>(dimension)},
+        static_cast<int>(GridLayoutT::options.particle_ghost_width)};
+
+    int particlesId_ = -1; //!< patch data id of the population's particles
+    int densityId_   = -1; //!< patch data id of the population's particle density
+    int fluxId_      = -1; //!< patch data id of the population's flux
 };
 
 } // namespace PHARE::amr

@@ -617,6 +617,20 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, HybridModel& m
     // this needs to be done before calling the messenger
     setTime(ions);
 
+    // particle boundary conditions: only the faces that act at each moment do something
+    // (see core::ParticleBoundaryStage)
+    using Stage = core::ParticleBoundaryStage;
+    if (mode != core::UpdaterMode::domain_only)
+    {
+        PHARE_LOG_SCOPE(1, "SolverPPC::moveIons::particleBC::Refill");
+        fromCoarser.applyParticleBoundaryConditions(ions, level, newTime, Stage::Refill);
+    }
+    {
+        // must come before the border sums
+        PHARE_LOG_SCOPE(1, "SolverPPC::moveIons::particleBC::Moments");
+        fromCoarser.applyParticleBoundaryConditions(ions, level, newTime, Stage::Moments);
+    }
+
     {
         PHARE_LOG_SCOPE(1, "SolverPPC::moveIons::fillFluxBorders");
         fromCoarser.fillFluxBorders(ions, level, newTime);
@@ -645,6 +659,9 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, HybridModel& m
                             throw std::runtime_error("domain particle outside owned cells");
             }
         })
+
+        // must come before fillIonGhostParticles, which empties patchGhostParticles
+        fromCoarser.applyParticleBoundaryConditions(ions, level, newTime, Stage::Leavers);
 
         fromCoarser.fillIonGhostParticles(ions, level, newTime);
 
