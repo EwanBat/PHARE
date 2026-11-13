@@ -7,6 +7,7 @@
 #include "core/data/field/field_traits.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/particle_boundary_condition.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -95,15 +96,15 @@ public:
      *
      * Use designated initializers to set only the needed fields, e.g.
      * @code {.gamma = 5. / 3.} @endcode or
-     * @code {.populationNames = names, .priorityPolicy = PriorityPolicy::ByBoundaryType} @endcode
+     * @code {.populations = pops, .priorityPolicy = PriorityPolicy::ByBoundaryType} @endcode
      * Fields must appear in declaration order, but any of them may be omitted.
      */
     struct Options
     {
         /** Heat capacity ratio, required to compute the inflow total energy (MHD). */
         double gamma = 0.0;
-        /** Names of the ion populations requiring a particle boundary condition (hybrid). */
-        std::vector<std::string> populationNames{};
+        /** The ion populations requiring a particle boundary condition (hybrid). */
+        std::vector<ParticleBoundaryInfo> populations{};
         /** How the master boundary is chosen at corners and edges. */
         PriorityPolicy priorityPolicy = PriorityPolicy::ByDirection;
     };
@@ -128,7 +129,7 @@ public:
      * @param dict Configuration dictionary.
      * @param scalar_quantities List of scalar quantities to manage.
      * @param vector_quantities List of vector quantities to manage.
-     * @param options Optional parameters (gamma, population names, priority policy).
+     * @param options Optional parameters (gamma, populations, priority policy).
      */
     BoundaryManager(PHARE::initializer::PHAREDict const& dict,
                     std::vector<typename physical_quantity_type::Scalar> const& scalarQuantities,
@@ -146,7 +147,7 @@ public:
             auto const location   = getBoundaryLocationFromString(key);
             boundaries_[location] = boundary_factory_type::create(
                 location, *subdict, scalarQuantities, vectorQuantities, gamma_,
-                options.populationNames);
+                options.populations);
         }
     }
 

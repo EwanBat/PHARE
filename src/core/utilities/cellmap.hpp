@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
+#include <functional>
 #include <numeric>
 
 
@@ -178,6 +179,13 @@ public:
              typename = std::enable_if_t<is_iterable_v<Array>, void>>
     void erase(Array const& items, std::size_t itemIndex,
                CellExtractor extract = default_extractor);
+
+
+    // erase from both the cellmap and 'items' every item indexed in a cell of 'box'.
+    // Only the cells of 'box' are visited, not the whole map. Each erased item is replaced
+    // by the last one, so the order of the remaining items changes.
+    template<typename Array, typename CellExtractor = DefaultExtractor>
+    void erase_in(box_t const& box, Array& items, CellExtractor extract = default_extractor);
 
 
     // sort all cell indexes
@@ -460,6 +468,44 @@ inline void CellMap<dim, cell_index_t>::erase(Range range)
     items.erase(range.begin(), range.end());
 }
 
+
+
+
+template<std::size_t dim, typename cell_index_t>
+template<typename Array, typename CellExtractor>
+inline void CellMap<dim, cell_index_t>::erase_in(box_t const& box, Array& items,
+                                                 CellExtractor extract)
+{
+    // only the cells of the map can hold indexes
+    auto const overlap = box * box_;
+    if (!overlap)
+        return;
+
+    // 1. collect the indexes of the items in the box, and forget them in the map
+    std::vector<std::size_t> toErase;
+    for_each_point(*overlap, [&](auto const& cell) {
+        auto& itemIndexes = cellIndexes_(local_(cell));
+        toErase.insert(toErase.end(), itemIndexes.begin(), itemIndexes.end());
+        itemIndexes.clear();
+    });
+
+    // 2. erase from the largest index to the smallest: when index i is erased, all the larger
+    //    ones are already gone, so the last item is never one still to erase
+    std::sort(toErase.begin(), toErase.end(), std::greater<>{});
+    for (auto const index : toErase)
+    {
+        auto const last = items.size() - 1;
+        if (index != last)
+        {
+            // the last item moves to 'index': its cell must point to its new place
+            auto const& lastCell = extract(items[last]);
+            if (isIn(Point{lastCell}, box_))
+                cellIndexes_(local_(lastCell)).updateIndex(last, index);
+            items[index] = std::move(items[last]);
+        }
+        items.pop_back();
+    }
+}
 
 
 

@@ -18,6 +18,8 @@
 #include "core/data/particles/particle.hpp"
 #include "initializer/data_provider.hpp"
 #include "core/utilities/point/point.hpp"
+#include "core/utilities/box/box.hpp"
+#include "core/utilities/box/box_spans.hpp"
 #include "core/def.hpp"
 
 
@@ -34,6 +36,50 @@ void maxwellianVelocity(std::array<double, 3> const& V, std::array<double, 3> co
     partVelocity[0] = maxwellX(generator);
     partVelocity[1] = maxwellY(generator);
     partVelocity[2] = maxwellZ(generator);
+}
+
+
+/**
+ * @brief Draw @p nbrParticlesPerCell particles in each cell of @p box, from one uniform
+ * Maxwellian (density @p n, bulk velocity @p V, thermal velocity @p Vth), and add them to
+ * @p particles.
+ *
+ * Used by the inflow boundary to fill the ghost box beyond the face. Like
+ * MaxwellianParticleInitializer::loadParticles, each cell has its own random generator, keyed by
+ * (@p seed, @p populationKey, @p level, global cell index): the particles of a cell do not depend
+ * on which patch or MPI rank draws them.
+ *
+ * @param particles where the new particles are added.
+ * @param box the cells to fill, in AMR indices.
+ * @param seed the key base. To get new particles at each call, mix the time into it.
+ */
+template<typename ParticleArray, std::size_t dim>
+void loadMaxwellianInBox(ParticleArray& particles, Box<int, dim> const& box, double const n,
+                         std::array<double, 3> const& V, std::array<double, 3> const& Vth,
+                         std::uint32_t const nbrParticlesPerCell, std::uint64_t const seed,
+                         std::uint64_t const populationKey, int const level)
+{
+    using Particle = typename ParticleArray::value_type;
+
+    double const weight = n / nbrParticlesPerCell;
+    particles.reserve(particles.size() + box.size() * nbrParticlesPerCell);
+
+    for_each_point(box, [&](auto const& point) {
+        std::array<int, dim> iCell;
+        for (std::size_t i = 0; i < dim; ++i)
+            iCell[i] = point[i];
+
+        SplitMix64 randGen{cell_key(seed, populationKey, level, iCell)};
+        ParticleDeltaDistribution<double> deltaDistrib;
+        std::array<double, 3> velocity;
+
+        for (std::uint32_t ipart = 0; ipart < nbrParticlesPerCell; ++ipart)
+        {
+            maxwellianVelocity(V, Vth, randGen, velocity);
+            auto const delta = for_N_make_array<dim>([&](auto) { return deltaDistrib(randGen); });
+            particles.emplace_back(Particle{weight, iCell, delta, velocity});
+        }
+    });
 }
 
 

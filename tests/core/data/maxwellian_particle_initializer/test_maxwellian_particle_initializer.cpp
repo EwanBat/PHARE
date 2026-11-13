@@ -326,6 +326,78 @@ TEST(PerCellSeed, keyDerivationIsPinned)
 } // namespace PHARE::initializer::test_per_cell_seed
 
 
+namespace PHARE::initializer::test_load_in_box
+{
+// a ghost box beyond the lower x face of a 2D domain [0, 9] x [0, 9], 2 cells thick
+using ParticleArrayT = ParticleArray<2>;
+
+Box<int, 2> const ghostBox{Point{-2, 0}, Point{-1, 9}};
+double const n = 2.;
+std::array<double, 3> const V{1., -0.5, 0.25};
+std::array<double, 3> const Vth{0.3, 0.2, 0.1};
+std::uint64_t const popKey = fnv1a64("protons");
+
+ParticleArrayT load(std::uint32_t const ppc, std::uint64_t const seed)
+{
+    ParticleArrayT particles{grow(ghostBox, 1)};
+    loadMaxwellianInBox(particles, ghostBox, n, V, Vth, ppc, seed, popKey, 0);
+    return particles;
+}
+
+TEST(LoadMaxwellianInBox, drawsPpcParticlesInEachCellOfTheBoxWithWeightNOverPpc)
+{
+    std::uint32_t const ppc = 50;
+    auto const particles    = load(ppc, 42);
+
+    EXPECT_EQ(particles.size(), ppc * ghostBox.size());
+    for (auto const& particle : particles)
+    {
+        EXPECT_TRUE(isIn(Point{particle.iCell}, ghostBox));
+        EXPECT_DOUBLE_EQ(particle.weight, n / ppc);
+        for (auto const delta : particle.delta)
+            EXPECT_TRUE(delta >= 0. and delta < 1.);
+    }
+}
+
+TEST(LoadMaxwellianInBox, sameSeedGivesSameParticlesAndOtherSeedOtherParticles)
+{
+    auto const a = load(20, 42);
+    auto const b = load(20, 42);
+    auto const c = load(20, 43);
+
+    ASSERT_EQ(a.size(), b.size());
+    for (std::size_t i = 0; i < a.size(); ++i)
+    {
+        EXPECT_EQ(a[i].iCell, b[i].iCell);
+        EXPECT_EQ(a[i].delta, b[i].delta);
+        EXPECT_EQ(a[i].v, b[i].v);
+    }
+    EXPECT_NE(a[0].v, c[0].v);
+}
+
+TEST(LoadMaxwellianInBox, velocitiesFollowTheMaxwellian)
+{
+    auto const particles = load(2000, 7);
+
+    std::array<double, 3> mean{}, var{};
+    for (auto const& particle : particles)
+        for (std::size_t i = 0; i < 3; ++i)
+            mean[i] += particle.v[i] / particles.size();
+    for (auto const& particle : particles)
+        for (std::size_t i = 0; i < 3; ++i)
+            var[i] += std::pow(particle.v[i] - mean[i], 2) / particles.size();
+
+    // 40000 particles: the statistical error is about Vth / 200
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        EXPECT_NEAR(mean[i], V[i], 0.01);
+        EXPECT_NEAR(std::sqrt(var[i]), Vth[i], 0.01);
+    }
+}
+
+} // namespace PHARE::initializer::test_load_in_box
+
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);

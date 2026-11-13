@@ -64,8 +64,8 @@ public:
      * @param vectors Vector quantities for which it is necessary to register a field boundary
      *                condition.
      * @param gamma Heat capacity ratio, used to compute the inflow total energy.
-     * @param populationNames Names of the ion populations for which it is necessary to register
-     *                        a particle boundary condition.
+     * @param populations The ion populations for which it is necessary to register a particle
+     *                    boundary condition.
      *
      * @return A unique pointer to the created @c Boundary object.
      */
@@ -73,10 +73,10 @@ public:
                                     scalar_quantity_list_type const& scalars,
                                     vector_quantity_list_type const& vectors,
                                     double const gamma                              = 0.0,
-                                    std::vector<std::string> const& populationNames = {})
+                                    std::vector<ParticleBoundaryInfo> const& populations = {})
     {
         BoundaryType const type = cppdict::get_value(dict, "type", BoundaryType::None);
-        _model_menu_type const quantities{scalars, vectors, populationNames};
+        _model_menu_type const quantities{scalars, vectors, populations};
 
         // initialize the boundary
         boundary_ptr_type boundary = std::make_unique<boundary_type>(type, location);
@@ -106,7 +106,7 @@ private:
     {
         scalar_quantity_list_type const& scalars;
         vector_quantity_list_type const& vectors;
-        std::vector<std::string> const& populationNames;
+        std::vector<ParticleBoundaryInfo> const& populations;
     };
 
 
@@ -121,9 +121,9 @@ private:
             boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(quantity);
         if constexpr (!std::is_void_v<ParticleArrayT>)
         {
-            for (auto const& popName : quantities.populationNames)
+            for (auto const& pop : quantities.populations)
                 boundary->template registerParticleCondition<ParticleBoundaryConditionType::None>(
-                    popName);
+                    pop.name);
         }
     }
 
@@ -385,28 +385,29 @@ private:
     {
         if constexpr (!std::is_void_v<ParticleArrayT>)
         {
-            auto const& popNames = quantities.populationNames;
+            auto const& pops = quantities.populations;
 
             // a typo in a population name would silently give no wind: refuse it
             for (auto const& [name, _] : windPopulations)
-                if (std::find(popNames.begin(), popNames.end(), name) == popNames.end())
+                if (std::none_of(pops.begin(), pops.end(),
+                                 [&](auto const& pop) { return pop.name == name; }))
                     throw std::runtime_error("BoundaryFactory: HybridInflow lists population '"
                                              + name + "', which the model does not have.");
 
-            for (auto const& popName : popNames)
+            for (auto const& pop : pops)
             {
-                if (windPopulations.contains(popName))
+                if (windPopulations.contains(pop.name))
                 {
-                    auto const& wind   = windPopulations[popName];
+                    auto const& wind   = windPopulations[pop.name];
                     auto const density = wind["density"].template to<double>();
                     auto const v   = initializer::parseDimXYZType<double, 3>(wind, "velocity");
                     auto const vth = initializer::parseDimXYZType<double, 3>(wind, "vth");
                     boundary->template registerParticleCondition<
-                        ParticleBoundaryConditionType::Inflow>(popName, density, v, vth);
+                        ParticleBoundaryConditionType::Inflow>(pop.name, density, v, vth, pop);
                 }
                 else
                     boundary->template registerParticleCondition<
-                        ParticleBoundaryConditionType::Open>(popName);
+                        ParticleBoundaryConditionType::Open>(pop.name);
             }
         }
     }
@@ -446,8 +447,8 @@ private:
     {
         if constexpr (!std::is_void_v<ParticleArrayT>)
         {
-            for (auto const& popName : quantities.populationNames)
-                boundary->template registerParticleCondition<type>(popName, args...);
+            for (auto const& pop : quantities.populations)
+                boundary->template registerParticleCondition<type>(pop.name, args...);
         }
     }
 };
