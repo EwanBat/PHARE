@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 
 #include "core/boundary/boundary_factory.hpp"
+#include "core/numerics/hybrid_inflow/hybrid_inflow_wind.hpp"
 #include "initializer/data_provider.hpp"
 
 #include "tests/core/numerics/boundary_condition/mhd_bc_test_fixtures.hpp"
@@ -171,6 +172,77 @@ TEST(BoundaryFactory, SuperMagnetofastInflowImposesMotionalElectricField)
         for (std::uint32_t i = 0; i <= mhdGhostWidth; ++i)
             EXPECT_DOUBLE_EQ(E[c](i), expected[c]) << "component " << c << " index " << i;
 }
+
+
+namespace
+{
+void addWindPopulation(PHAREDict& wind, std::string const& name, double const density,
+                       std::array<double, 3> const& v)
+{
+    wind[name]["density"]       = density;
+    wind[name]["velocity"]["x"] = v[0];
+    wind[name]["velocity"]["y"] = v[1];
+    wind[name]["velocity"]["z"] = v[2];
+}
+
+ParticleBoundaryInfo population(std::string const& name, double const charge)
+{
+    return {.name = name, .nbrParticlesPerCell = 10, .seed = 1, .charge = charge};
+}
+} // namespace
+
+// E at a hybrid inflow face uses V_q = sum q n V / sum q n, the electron velocity of Ohm's law
+// in a uniform wind (J = 0)
+TEST(WindChargeVelocity, isTheChargeWeightedVelocityOfTheWind)
+{
+    PHAREDict wind;
+    addWindPopulation(wind, "protons", 1.0, {2.0, 0.0, 0.0});
+    addWindPopulation(wind, "alpha", 0.05, {2.5, 0.1, 0.0});
+    std::vector<ParticleBoundaryInfo> const pops{population("protons", 1.0),
+                                                 population("alpha", 2.0)};
+
+    auto const v = windChargeVelocity(wind, pops);
+
+    double const qn = 1.0 * 1.0 + 2.0 * 0.05;
+    EXPECT_DOUBLE_EQ((1.0 * 1.0 * 2.0 + 2.0 * 0.05 * 2.5) / qn, v[0]);
+    EXPECT_DOUBLE_EQ((2.0 * 0.05 * 0.1) / qn, v[1]);
+    EXPECT_DOUBLE_EQ(0.0, v[2]);
+}
+
+TEST(WindChargeVelocity, isTheCommonVelocityWhenAllPopulationsShareIt)
+{
+    PHAREDict wind;
+    addWindPopulation(wind, "protons", 1.0, {2.0, 0.3, 0.0});
+    addWindPopulation(wind, "alpha", 0.05, {2.0, 0.3, 0.0});
+    std::vector<ParticleBoundaryInfo> const pops{population("protons", 1.0),
+                                                 population("alpha", 2.0)};
+
+    auto const v = windChargeVelocity(wind, pops);
+
+    EXPECT_DOUBLE_EQ(2.0, v[0]);
+    EXPECT_DOUBLE_EQ(0.3, v[1]);
+    EXPECT_DOUBLE_EQ(0.0, v[2]);
+}
+
+TEST(WindChargeVelocity, ignoresThePopulationsNotInTheWind)
+{
+    PHAREDict wind;
+    addWindPopulation(wind, "protons", 1.0, {2.0, 0.0, 0.0});
+    std::vector<ParticleBoundaryInfo> const pops{population("protons", 1.0),
+                                                 population("beam", 1.0)};
+
+    EXPECT_DOUBLE_EQ(2.0, windChargeVelocity(wind, pops)[0]);
+}
+
+TEST(WindChargeVelocity, refusesAWindWithoutCharge)
+{
+    PHAREDict wind;
+    addWindPopulation(wind, "protons", 1.0, {2.0, 0.0, 0.0});
+    std::vector<ParticleBoundaryInfo> const pops{population("protons", 0.0)};
+
+    EXPECT_THROW(windChargeVelocity(wind, pops), std::runtime_error);
+}
+
 
 int main(int argc, char** argv)
 {

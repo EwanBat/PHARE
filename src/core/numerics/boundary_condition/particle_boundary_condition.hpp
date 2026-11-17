@@ -211,6 +211,7 @@ struct ParticleBoundaryInfo
     std::string name;                      //!< name of the population
     std::uint32_t nbrParticlesPerCell = 0; //!< particles drawn per cell
     std::optional<std::size_t> seed{};     //!< random seed; none means a random one
+    double charge = 0.;                    //!< charge of its particles (0 if not given)
 };
 
 

@@ -114,14 +114,50 @@ class TestBoundaryStructural(unittest.TestCase):
         self.assertEqual((2.0, 0.0, 0.0), protons["velocity"])  # face velocity by default
         self.assertEqual((0.3, 0.3, 0.3), protons["vth"])
 
+    def _without_face_velocity(self, pops):
+        bc = self._hybrid_inflow(populations=pops)
+        del bc["velocity"]
+        return bc
+
     def test_hybrid_inflow_population_velocity(self):
+        # no face velocity, one velocity per population
+        pops = {
+            "protons": {"density": 1.0, "vth": [0.3, 0.3, 0.3], "velocity": 2.0},
+            "alpha": {"density": 0.04, "vth": [0.1, 0.1, 0.1], "velocity": 2.2},
+        }
+        bc = self._resolve_hybrid(self._without_face_velocity(pops))["xlower"]
+        self.assertIsNone(bc.velocity)
+        self.assertEqual((2.0, 0.0, 0.0), bc.populations["protons"]["velocity"])
+        self.assertEqual((2.2, 0.0, 0.0), bc.populations["alpha"]["velocity"])
+
+    def test_hybrid_inflow_face_and_population_velocity_rejected(self):
+        pops = {
+            "protons": {"density": 1.0, "vth": [0.3, 0.3, 0.3], "velocity": 2.0},
+            "alpha": {"density": 0.04, "vth": [0.1, 0.1, 0.1], "velocity": 2.2},
+        }
+        with self.assertRaises(ValueError):
+            self._resolve_hybrid(self._hybrid_inflow(populations=pops))
+
+    def test_hybrid_inflow_face_velocity_and_one_population_velocity_rejected(self):
         pops = {
             "protons": {"density": 1.0, "vth": [0.3, 0.3, 0.3]},
             "alpha": {"density": 0.04, "vth": [0.1, 0.1, 0.1], "velocity": 2.2},
         }
-        bc = self._resolve_hybrid(self._hybrid_inflow(populations=pops))["xlower"]
-        self.assertEqual((2.0, 0.0, 0.0), bc.populations["protons"]["velocity"])
-        self.assertEqual((2.2, 0.0, 0.0), bc.populations["alpha"]["velocity"])
+        with self.assertRaises(ValueError):
+            self._resolve_hybrid(self._hybrid_inflow(populations=pops))
+
+    def test_hybrid_inflow_some_population_velocities_missing_rejected(self):
+        pops = {
+            "protons": {"density": 1.0, "vth": [0.3, 0.3, 0.3]},
+            "alpha": {"density": 0.04, "vth": [0.1, 0.1, 0.1], "velocity": 2.2},
+        }
+        with self.assertRaises(ValueError):
+            self._resolve_hybrid(self._without_face_velocity(pops))
+
+    def test_hybrid_inflow_no_velocity_at_all_rejected(self):
+        pops = {"protons": {"density": 1.0, "vth": [0.3, 0.3, 0.3]}}
+        with self.assertRaises(ValueError):
+            self._resolve_hybrid(self._without_face_velocity(pops))
 
     def test_hybrid_inflow_requires_populations(self):
         bc = self._hybrid_inflow()
@@ -150,8 +186,8 @@ class TestBoundaryStructural(unittest.TestCase):
 
     def test_hybrid_inflow_population_velocity_must_enter(self):
         pops = {"protons": {"density": 1.0, "vth": [0.3, 0.3, 0.3], "velocity": -1.0}}
-        with self.assertRaises(ValueError):
-            self._resolve_hybrid(self._hybrid_inflow(populations=pops))
+        with self.assertRaisesRegex(ValueError, "must point into the domain"):
+            self._resolve_hybrid(self._without_face_velocity(pops))
 
     def test_hybrid_inflow_velocity_must_enter(self):
         with self.assertRaises(ValueError):

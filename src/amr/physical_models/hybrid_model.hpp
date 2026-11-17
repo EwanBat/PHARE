@@ -135,8 +135,8 @@ public:
     std::unordered_map<std::string, std::shared_ptr<core::NdArrayVector<dimension, int>>> tags;
 
 private:
-    /** @brief Name, particles per cell and seed of each population, read from its particle
-     *  initializer as ParticleInitializerFactory does, for the particle boundary conditions. */
+    /** @brief Name, particles per cell, seed and charge of each population, read from its
+     *  particle initializer as ParticleInitializerFactory does, for the boundary conditions. */
     static std::vector<core::ParticleBoundaryInfo> boundaryPopulations_(Ions const& ions)
     {
         std::vector<core::ParticleBoundaryInfo> populations;
@@ -154,7 +154,10 @@ private:
             if (info.contains("nbr_part_per_cell"))
                 ppc = static_cast<std::uint32_t>(info["nbr_part_per_cell"].template to<int>());
 
-            populations.push_back({.name = pop.name(), .nbrParticlesPerCell = ppc, .seed = seed});
+            populations.push_back({.name                = pop.name(),
+                                   .nbrParticlesPerCell = ppc,
+                                   .seed                = seed,
+                                   .charge              = pop.charge()});
         }
         return populations;
     }

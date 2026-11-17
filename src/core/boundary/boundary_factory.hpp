@@ -6,6 +6,7 @@
 #include "core/data/field/field_traits.hpp"
 #include "core/models/quantities/hybrid_quantities.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
+#include "core/numerics/hybrid_inflow/hybrid_inflow_wind.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -320,7 +321,8 @@ private:
      *
      *  The magnetic field is imposed through the motional electric field E = -v x B on the
      *  boundary, and its ghosts are filled with the inflow B by a divergence-free transverse
-     *  Dirichlet condition. B and the velocity used for E belong to the face.
+     *  Dirichlet condition. B belongs to the face; v is the charge-weighted velocity of the
+     *  wind (windChargeVelocity), so that E matches Ohm's law on the other side of the face.
      *
      *  Particles, population by population:
      *
@@ -340,12 +342,12 @@ private:
                 "HybridInflow boundary type is only supported by the hybrid model.");
         else
         {
-            for (auto const key : {"velocity", "B", "populations"})
+            for (auto const key : {"B", "populations"})
                 if (!data.contains(key))
                     throw std::runtime_error(std::string{"BoundaryFactory: HybridInflow requires '"}
                                              + key + "'.");
 
-            auto const v = initializer::parseDimXYZType<double, 3>(data, "velocity");
+            auto const v = windChargeVelocity(data["populations"], quantities.populations);
             auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
 
             register_scalars_none_(boundary, quantities);

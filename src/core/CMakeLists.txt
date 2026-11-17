@@ -32,6 +32,7 @@ set( SOURCES_INC
      boundary/boundary_defs.hpp
      boundary/boundary_factory.hpp
      boundary/boundary_manager.hpp
+     numerics/hybrid_inflow/hybrid_inflow_wind.hpp
      numerics/boundary_condition/boundary_condition.hpp
      numerics/boundary_condition/field_boundary_condition.hpp
      numerics/boundary_condition/field_boundary_condition_resolver.hpp
