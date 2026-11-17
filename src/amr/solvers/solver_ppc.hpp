@@ -21,7 +21,9 @@
 #include <SAMRAI/hier/Patch.h>
 #include "SAMRAI/hier/PatchLevel.h"
 
+#include <array>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <tuple>
 #include <unordered_map>
@@ -197,6 +199,14 @@ private:
         std::unordered_map<std::string /*patchid*/, Boxing_t> patches;
     };
     std::unordered_map<int /*level*/, LevelBoxing> boxing;
+
+
+    // the moments of moveIons_ where the particle boundary conditions act, in this order. After
+    // the push of copies (domain_only) the particle arrays have not moved: no Refill, and
+    // PredictedMoments (see core::ParticleBoundaryStage)
+    using Stage                               = core::ParticleBoundaryStage;
+    static constexpr std::array afterCopyPush = {Stage::PredictedMoments};
+    static constexpr std::array afterRealPush = {Stage::Refill, Stage::Moments};
 
 
 }; // end solverPPC
@@ -617,18 +627,15 @@ void SolverPPC<HybridModel, AMR_Types>::moveIons_(level_t& level, HybridModel& m
     // this needs to be done before calling the messenger
     setTime(ions);
 
-    // particle boundary conditions: only the faces that act at each moment do something
-    // (see core::ParticleBoundaryStage)
-    using Stage = core::ParticleBoundaryStage;
-    if (mode != core::UpdaterMode::domain_only)
+    // particle boundary conditions, before the border sums: only the faces that act at each
+    // moment do something
+    std::span<Stage const> const stages
+        = mode == core::UpdaterMode::domain_only ? std::span<Stage const>{afterCopyPush}
+                                                 : std::span<Stage const>{afterRealPush};
+    for (auto const stage : stages)
     {
-        PHARE_LOG_SCOPE(1, "SolverPPC::moveIons::particleBC::Refill");
-        fromCoarser.applyParticleBoundaryConditions(ions, level, newTime, Stage::Refill);
-    }
-    {
-        // must come before the border sums
-        PHARE_LOG_SCOPE(1, "SolverPPC::moveIons::particleBC::Moments");
-        fromCoarser.applyParticleBoundaryConditions(ions, level, newTime, Stage::Moments);
+        PHARE_LOG_SCOPE(1, "SolverPPC::moveIons::particleBC");
+        fromCoarser.applyParticleBoundaryConditions(ions, level, newTime, stage);
     }
 
     {

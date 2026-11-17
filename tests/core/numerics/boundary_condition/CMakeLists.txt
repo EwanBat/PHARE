@@ -30,3 +30,10 @@ foreach(suffix none neumann dirichlet symmetric antisymmetric
 endforeach()
 
 
+set(target test-particle-bc-inflow)
+add_executable(${target} test_particle_boundary_conditions_inflow.cpp)
+target_include_directories(${target} PRIVATE ${GTEST_INCLUDE_DIRS} ${PHARE_PROJECT_DIR})
+target_link_libraries(${target} PRIVATE phare_core cppdict ${GTEST_LIBS})
+add_no_mpi_phare_test(${target} ${CMAKE_CURRENT_BINARY_DIR})
+
+

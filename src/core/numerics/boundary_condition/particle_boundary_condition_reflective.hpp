@@ -22,10 +22,11 @@ public:
     using Super     = IParticleBoundaryCondition<ParticleArrayT, FieldT, GridLayoutT>;
     using data_type = Super::data_type;
 
-    /** @brief Reflective acts at Moments and Leavers. */
+    /** @brief Reflective acts at PredictedMoments, Moments and Leavers. */
     bool actsAt(ParticleBoundaryStage const stage) const override
     {
-        return stage == ParticleBoundaryStage::Moments or stage == ParticleBoundaryStage::Leavers;
+        return stage == ParticleBoundaryStage::PredictedMoments
+               or stage == ParticleBoundaryStage::Moments or stage == ParticleBoundaryStage::Leavers;
     }
 
     ParticleBoundaryConditionType getType() const override
@@ -40,6 +41,7 @@ public:
     {
         switch (stage)
         {
+            case ParticleBoundaryStage::PredictedMoments:
             case ParticleBoundaryStage::Moments:
                 // TODO: make density and flux symmetric about the face: add each ghost node
                 // to its mirror node inside, then copy the result back to the ghost node.

@@ -4,12 +4,14 @@
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/ions/particle_initializers/maxwellian_particle_initializer.hpp"
 #include "core/numerics/boundary_condition/particle_boundary_condition.hpp"
+#include "core/numerics/interpolator/interpolator.hpp"
 #include "core/utilities/random.hpp"
 #include "core/def.hpp"
 
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <vector>
 
 namespace PHARE::core
 {
@@ -22,9 +24,20 @@ namespace PHARE::core
  * It holds the inflow plasma given by the user (density, bulk velocity, thermal velocity) and,
  * from the population, the number of particles per cell and the random seed.
  *
- *     Init     draw the stock in the box
- *     Refill   empty the box, draw it again (the push left a gap at the far edge)
- *     Moments  deposit the stock                              (not written yet)
+ *     Init              draw the stock in the box
+ *     PredictedMoments  draw a temp stock at the new time, deposit it, drop it
+ *     Refill            empty the box, draw it again (the push left a gap at the far edge)
+ *     Moments           deposit the stock
+ *     Leavers           erase the strays: stock particles the real push took into a neighbour's
+ *                       cells. The neighbour drew the same particle (same key), and took it into
+ *                       its domain or keeps it in its own front; this copy would be counted twice
+ *                       if it came back (see strayBoxes)
+ *
+ * Why a temp stock at PredictedMoments: after the push of copies (domain_only), the real stock is
+ * still at the start of the step, so depositing it would mix two times and count twice the
+ * particles that came in (the updater already deposited their pushed copies). The temp draw uses
+ * the same key as the Refill that follows at the same time, so both stages deposit the same
+ * particles. Only the part in front of the patch's own cells is deposited (frontOfOwnCells).
  */
 template<typename ParticleArrayT, typename FieldT, typename GridLayoutT>
 class ParticleBoundaryConditionInflow
@@ -61,12 +74,8 @@ public:
     NO_DISCARD std::array<double, 3> const& thermalVelocity() const { return thermalVelocity_; }
     NO_DISCARD std::uint32_t nbrParticlesPerCell() const { return nbrParticlesPerCell_; }
 
-    /** @brief Inflow acts at Init, Refill and Moments. */
-    bool actsAt(ParticleBoundaryStage const stage) const override
-    {
-        return stage == ParticleBoundaryStage::Init or stage == ParticleBoundaryStage::Refill
-               or stage == ParticleBoundaryStage::Moments;
-    }
+    /** @brief Inflow acts at every stage. */
+    bool actsAt(ParticleBoundaryStage const /*stage*/) const override { return true; }
 
     ParticleBoundaryConditionType getType() const override
     {
@@ -86,19 +95,48 @@ public:
                 stock.erase_in(ghostBox); // visits only the cells of ghostBox
                 drawStock_(stock, ghostBox, gridLayout, time);
                 break;
-            case ParticleBoundaryStage::Moments:
-                // TODO: deposit the stock, only the part in front of this patch's own cells.
+            case ParticleBoundaryStage::PredictedMoments:
+            {
+                // the real stock is still at the start of the step: draw the one of the new time
+                auto const ownBox = frontOfOwnCells(ghostBox, gridLayout.AMRBox());
+                toDeposit_.clear();
+                drawStock_(toDeposit_, ownBox, gridLayout, time);
+                deposit_(data, gridLayout);
                 break;
-            case ParticleBoundaryStage::Leavers: break; // inflow does not act then
+            }
+            case ParticleBoundaryStage::Moments:
+            {
+                auto const ownBox = frontOfOwnCells(ghostBox, gridLayout.AMRBox());
+                toDeposit_.clear();
+                stock.export_particles(ownBox, toDeposit_, [](auto const& p) { return p; });
+                deposit_(data, gridLayout);
+                break;
+            }
+            case ParticleBoundaryStage::Leavers:
+                for (auto const& strays : strayBoxes(ghostBox, gridLayout.AMRBox()))
+                    stock.erase_in(strays);
+                break;
         }
     }
 
 private:
-    /** @brief Draw the inflow Maxwellian in every cell of @p box.
+    using particle_type = ParticleArrayT::value_type;
+    using interpolator_type
+        = Interpolator<Super::dimension, GridLayoutT::options.interp_order>;
+
+    /** @brief Add the particles of toDeposit_ to the density and flux of the population. */
+    void deposit_(data_type& data, GridLayoutT const& gridLayout)
+    {
+        interpolator_(toDeposit_, data.density, data.flux, gridLayout);
+    }
+
+    /** @brief Draw the inflow Maxwellian in every cell of @p box, into @p stock (a ParticleArray
+     * or a std::vector of particles).
      *
      * The time is mixed into the key: without it, each Refill would draw exactly the same
      * particles in a cell, and the same pattern would enter at every step. */
-    void drawStock_(ParticleArrayT& stock, Box<int, Super::dimension> const& box,
+    template<typename Particles>
+    void drawStock_(Particles& stock, Box<int, Super::dimension> const& box,
                     GridLayoutT const& gridLayout, double const time) const
     {
         auto const seed = hash_combine(seed_, std::bit_cast<std::uint64_t>(time));
@@ -112,6 +150,10 @@ private:
     std::uint32_t nbrParticlesPerCell_;
     std::uint64_t seed_;          //!< key base, drawn once if the population has no seed
     std::uint64_t populationKey_; //!< two populations must not get the same particles
+
+    //! the particles a Moments stage deposits, kept between calls to reuse its memory
+    std::vector<particle_type> toDeposit_;
+    interpolator_type interpolator_;
 };
 } // namespace PHARE::core
 
