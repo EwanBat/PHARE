@@ -144,10 +144,23 @@ struct InflowMoments2D : testing::Test
         return data_type{a.domain, a.patchGhost, a.stock, *(&m.rho), m.F};
     }
 
-    void apply(ParticleBoundaryStage stage, Arrays& a, Moments& m)
+    void apply(ParticleBoundaryStage stage, Arrays& a, Moments& m, double const t = time)
+    {
+        apply(inflow, stage, a, m, t);
+    }
+
+    void apply(InflowT& condition, ParticleBoundaryStage stage, Arrays& a, Moments& m,
+               double const t = time)
     {
         auto data = dataOf(a, m);
-        inflow.apply(stage, data, BoundaryLocation::XLower, ghostBox, layout, time);
+        condition.apply(stage, data, BoundaryLocation::XLower, ghostBox, layout, t);
+    }
+
+    static void expectSameParticles(ParticleArrayT const& a, ParticleArrayT const& b)
+    {
+        ASSERT_EQ(a.size(), b.size());
+        for (std::size_t i = 0; i < a.size(); ++i)
+            EXPECT_EQ(a[i], b[i]) << "particle " << i;
     }
 };
 
@@ -196,6 +209,58 @@ TEST_F(InflowMoments2D, depositsOnlyTheCellsInFrontOfThePatch)
             total += moments.rho.data()[i];
         EXPECT_NEAR(density * nCellsY2D, total, 1e-10);
     }
+}
+
+
+// Refill reuses the stock that PredictedMoments drew at the same time: it must be exactly the
+// stock a Refill alone would draw (same particles, same order), so the result does not change.
+TEST_F(InflowMoments2D, refillAfterPredictedMomentsGivesTheStockOfARefillAlone)
+{
+    double const start = 0.32; // the stock of the start of the step, emptied by Refill
+
+    InflowT alone{density, {1., 0., 0.}, {.3, .3, .3}, ParticleBoundaryInfo{"protons", ppc, 42}};
+    Arrays expected{particleBox};
+    Moments unused{layout};
+    apply(alone, ParticleBoundaryStage::Init, expected, unused, start);
+    apply(alone, ParticleBoundaryStage::Refill, expected, unused);
+
+    Arrays reused{particleBox};
+    Moments moments{layout};
+    apply(ParticleBoundaryStage::Init, reused, moments, start);
+    apply(ParticleBoundaryStage::PredictedMoments, reused, moments);
+    apply(ParticleBoundaryStage::Refill, reused, moments);
+
+    EXPECT_EQ((nCellsY2D + 2) * ppc, reused.stock.size());
+    expectSameParticles(expected.stock, reused.stock);
+}
+
+// A stock kept for another time is not used: Refill draws, as without PredictedMoments.
+TEST_F(InflowMoments2D, refillDrawsWhenTheKeptStockIsForAnotherTime)
+{
+    InflowT alone{density, {1., 0., 0.}, {.3, .3, .3}, ParticleBoundaryInfo{"protons", ppc, 42}};
+    Arrays expected{particleBox};
+    Moments unused{layout};
+    apply(alone, ParticleBoundaryStage::Refill, expected, unused);
+
+    Arrays reused{particleBox};
+    Moments moments{layout};
+    apply(ParticleBoundaryStage::PredictedMoments, reused, moments, time - 0.01);
+    apply(ParticleBoundaryStage::Refill, reused, moments);
+
+    expectSameParticles(expected.stock, reused.stock);
+}
+
+// A kept stock is used once: a second Refill at the same time draws again (the same particles,
+// draws are keyed), so the box still holds one stock, not two.
+TEST_F(InflowMoments2D, aKeptStockIsUsedOnce)
+{
+    Arrays arrays{particleBox};
+    Moments moments{layout};
+    apply(ParticleBoundaryStage::PredictedMoments, arrays, moments);
+    apply(ParticleBoundaryStage::Refill, arrays, moments);
+    apply(ParticleBoundaryStage::Refill, arrays, moments);
+
+    EXPECT_EQ((nCellsY2D + 2) * ppc, arrays.stock.size());
 }
 
 

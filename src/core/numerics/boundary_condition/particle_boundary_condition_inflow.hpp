@@ -8,9 +8,11 @@
 #include "core/utilities/random.hpp"
 #include "core/def.hpp"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace PHARE::core
@@ -25,8 +27,11 @@ namespace PHARE::core
  * from the population, the number of particles per cell and the random seed.
  *
  *     Init              draw the stock in the box
- *     PredictedMoments  draw a temp stock at the new time, deposit it, drop it
- *     Refill            empty the box, draw it again (the push left a gap at the far edge)
+ *     PredictedMoments  draw the stock of the new time in the box, deposit its part in front of
+ *                       the patch's own cells, keep it for the Refill that follows
+ *     Refill            empty the box, fill it again (the push left a gap at the far edge): with
+ *                       the stock kept by PredictedMoments if it is for this box and this time,
+ *                       else with a new draw
  *     Moments           deposit the stock
  *     Leavers           erase the strays: stock particles the real push took into a neighbour's
  *                       cells. The neighbour drew the same particle (same key), and took it into
@@ -35,9 +40,12 @@ namespace PHARE::core
  *
  * Why a temp stock at PredictedMoments: after the push of copies (domain_only), the real stock is
  * still at the start of the step, so depositing it would mix two times and count twice the
- * particles that came in (the updater already deposited their pushed copies). The temp draw uses
- * the same key as the Refill that follows at the same time, so both stages deposit the same
- * particles. Only the part in front of the patch's own cells is deposited (frontOfOwnCells).
+ * particles that came in (the updater already deposited their pushed copies). Only the part in
+ * front of the patch's own cells is deposited (frontOfOwnCells).
+ *
+ * Why Refill reuses it: draws are keyed by (seed, time, population, cell), and both stages run at
+ * the same new time, so a Refill draw would give exactly the particles PredictedMoments drew, in
+ * the same order. Drawing is most of the cost of this condition, so it is done once per step.
  */
 template<typename ParticleArrayT, typename FieldT, typename GridLayoutT>
 class ParticleBoundaryConditionInflow
@@ -90,17 +98,41 @@ public:
 
         switch (stage)
         {
-            case ParticleBoundaryStage::Init: drawStock_(stock, ghostBox, gridLayout, time); break;
-            case ParticleBoundaryStage::Refill:
-                stock.erase_in(ghostBox); // visits only the cells of ghostBox
+            case ParticleBoundaryStage::Init:
+                kept_.clear(); // the level is new: a kept stock may be for a box gone elsewhere
                 drawStock_(stock, ghostBox, gridLayout, time);
                 break;
+            case ParticleBoundaryStage::Refill:
+            {
+                stock.erase_in(ghostBox); // visits only the cells of ghostBox
+                auto const kept = findKept_(ghostBox);
+                if (kept != kept_.end() and kept->time == time)
+                {
+                    stock.reserve(stock.size() + kept->particles.size());
+                    for (auto const& particle : kept->particles)
+                        stock.push_back(particle);
+                    kept->time = std::numeric_limits<double>::quiet_NaN(); // used: never again
+                }
+                else
+                    drawStock_(stock, ghostBox, gridLayout, time);
+                break;
+            }
             case ParticleBoundaryStage::PredictedMoments:
             {
-                // the real stock is still at the start of the step: draw the one of the new time
+                // the real stock is still at the start of the step: draw the one of the new time,
+                // in the whole box, and keep it for the Refill at the same time
+                auto kept = findKept_(ghostBox);
+                if (kept == kept_.end())
+                    kept = kept_.insert(kept_.end(), Kept{ghostBox, time, {}});
+                kept->time = time;
+                kept->particles.clear();
+                drawStock_(kept->particles, ghostBox, gridLayout, time);
+
                 auto const ownBox = frontOfOwnCells(ghostBox, gridLayout.AMRBox());
                 toDeposit_.clear();
-                drawStock_(toDeposit_, ownBox, gridLayout, time);
+                for (auto const& particle : kept->particles)
+                    if (isIn(Point<int, Super::dimension>{particle.iCell}, ownBox))
+                        toDeposit_.push_back(particle);
                 deposit_(data, gridLayout);
                 break;
             }
@@ -153,6 +185,24 @@ private:
 
     //! the particles a Moments stage deposits, kept between calls to reuse its memory
     std::vector<particle_type> toDeposit_;
+
+    /** A stock drawn by PredictedMoments, for the Refill of the same box at the same time. One
+     * condition serves every patch of its face on this rank (and a corner box it rules), so it
+     * keeps one per ghost box. Refill uses it once (its time becomes NaN, its memory stays for
+     * the next step); Init clears them all. */
+    struct Kept
+    {
+        Box<int, Super::dimension> box;
+        double time;
+        std::vector<particle_type> particles;
+    };
+    std::vector<Kept> kept_; //!< a few entries: one per ghost box of this face on this rank
+
+    auto findKept_(Box<int, Super::dimension> const& box)
+    {
+        return std::find_if(kept_.begin(), kept_.end(), [&](Kept const& k) { return k.box == box; });
+    }
+
     interpolator_type interpolator_;
 };
 } // namespace PHARE::core
