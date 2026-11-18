@@ -25,3 +25,10 @@ target_link_libraries(${target} PRIVATE phare_core phare_simulator ${GTEST_LIBS}
 add_no_mpi_phare_test(${target} ${CMAKE_CURRENT_BINARY_DIR})
 
 
+
+
+set(target test-updater-inflow-flux)
+add_executable(${target} test_updater_inflow_flux.cpp)
+target_include_directories(${target} PRIVATE ${GTEST_INCLUDE_DIRS})
+target_link_libraries(${target} PRIVATE phare_core phare_simulator ${GTEST_LIBS})
+add_no_mpi_phare_test(${target} ${CMAKE_CURRENT_BINARY_DIR})

@@ -5,6 +5,7 @@ add_subdirectory(dispersion)
 add_subdirectory(ionIonBeam)
 add_subdirectory(conservation)
 add_subdirectory(harris)
+add_subdirectory(hybrid_inflow)
 
 add_subdirectory(mhd_alfven2d)
 add_subdirectory(mhd_convergence)

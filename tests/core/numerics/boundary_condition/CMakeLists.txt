@@ -37,3 +37,10 @@ target_link_libraries(${target} PRIVATE phare_core cppdict ${GTEST_LIBS})
 add_no_mpi_phare_test(${target} ${CMAKE_CURRENT_BINARY_DIR})
 
 
+
+
+set(target test-boundary-factory-hybrid-inflow)
+add_executable(${target} test_boundary_factory_hybrid_inflow.cpp)
+target_include_directories(${target} PRIVATE ${GTEST_INCLUDE_DIRS} ${PHARE_PROJECT_DIR})
+target_link_libraries(${target} PRIVATE phare_core cppdict ${GTEST_LIBS})
+add_no_mpi_phare_test(${target} ${CMAKE_CURRENT_BINARY_DIR})
