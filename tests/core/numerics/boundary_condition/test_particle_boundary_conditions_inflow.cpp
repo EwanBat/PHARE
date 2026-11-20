@@ -1,4 +1,4 @@
-// Tests of the inflow particle boundary condition: the Moments and PredictedMoments stages.
+// Tests of the inflow particle boundary condition: the refill and deposit stages.
 
 #include "core/data/particles/particle_array.hpp"
 #include "core/numerics/boundary_condition/particle_boundary_condition.hpp"
@@ -9,6 +9,7 @@
 #include "gtest/gtest.h"
 
 #include <cstddef>
+#include <stdexcept>
 
 using namespace PHARE::core;
 
@@ -176,9 +177,10 @@ TEST_F(InflowMoments2D, predictedMomentsDepositsWhatMomentsDepositsAfterARefill)
     // push of copies: the real stock is empty here (it would be at the start of the step)
     Arrays notMoved{particleBox};
     Moments fromTempDraw{layout};
+    apply(ParticleBoundaryStage::PredictedRefill, notMoved, fromTempDraw);
     apply(ParticleBoundaryStage::PredictedMoments, notMoved, fromTempDraw);
 
-    EXPECT_EQ(0u, notMoved.stock.size()); // the temp draw is not kept
+    EXPECT_EQ(0u, notMoved.stock.size()); // the temp stock is not put in the real one
 
     auto const& a = fromStock.rho;
     auto const& b = fromTempDraw.rho;
@@ -197,6 +199,7 @@ TEST_F(InflowMoments2D, depositsOnlyTheCellsInFrontOfThePatch)
         Arrays arrays{particleBox};
         Moments moments{layout};
         apply(ParticleBoundaryStage::Init, arrays, moments);
+        apply(ParticleBoundaryStage::PredictedRefill, arrays, moments); // no effect on Moments
         apply(stage, arrays, moments);
 
         // the stock covers the whole ghost box (nCellsY2D + 2 cells)...
@@ -212,9 +215,9 @@ TEST_F(InflowMoments2D, depositsOnlyTheCellsInFrontOfThePatch)
 }
 
 
-// Refill reuses the stock that PredictedMoments drew at the same time: it must be exactly the
+// Refill reuses the stock that PredictedRefill drew at the same time: it must be exactly the
 // stock a Refill alone would draw (same particles, same order), so the result does not change.
-TEST_F(InflowMoments2D, refillAfterPredictedMomentsGivesTheStockOfARefillAlone)
+TEST_F(InflowMoments2D, refillAfterPredictedRefillGivesTheStockOfARefillAlone)
 {
     double const start = 0.32; // the stock of the start of the step, emptied by Refill
 
@@ -227,6 +230,8 @@ TEST_F(InflowMoments2D, refillAfterPredictedMomentsGivesTheStockOfARefillAlone)
     Arrays reused{particleBox};
     Moments moments{layout};
     apply(ParticleBoundaryStage::Init, reused, moments, start);
+    apply(ParticleBoundaryStage::PredictedRefill, reused, moments);
+    EXPECT_EQ((nCellsY2D + 2) * ppc, reused.stock.size()); // the real stock is not touched
     apply(ParticleBoundaryStage::PredictedMoments, reused, moments);
     apply(ParticleBoundaryStage::Refill, reused, moments);
 
@@ -234,7 +239,7 @@ TEST_F(InflowMoments2D, refillAfterPredictedMomentsGivesTheStockOfARefillAlone)
     expectSameParticles(expected.stock, reused.stock);
 }
 
-// A stock kept for another time is not used: Refill draws, as without PredictedMoments.
+// A stock kept for another time is not used: Refill draws, as without PredictedRefill.
 TEST_F(InflowMoments2D, refillDrawsWhenTheKeptStockIsForAnotherTime)
 {
     InflowT alone{density, {1., 0., 0.}, {.3, .3, .3}, ParticleBoundaryInfo{"protons", ppc, 42}};
@@ -244,7 +249,7 @@ TEST_F(InflowMoments2D, refillDrawsWhenTheKeptStockIsForAnotherTime)
 
     Arrays reused{particleBox};
     Moments moments{layout};
-    apply(ParticleBoundaryStage::PredictedMoments, reused, moments, time - 0.01);
+    apply(ParticleBoundaryStage::PredictedRefill, reused, moments, time - 0.01);
     apply(ParticleBoundaryStage::Refill, reused, moments);
 
     expectSameParticles(expected.stock, reused.stock);
@@ -256,11 +261,25 @@ TEST_F(InflowMoments2D, aKeptStockIsUsedOnce)
 {
     Arrays arrays{particleBox};
     Moments moments{layout};
-    apply(ParticleBoundaryStage::PredictedMoments, arrays, moments);
+    apply(ParticleBoundaryStage::PredictedRefill, arrays, moments);
     apply(ParticleBoundaryStage::Refill, arrays, moments);
     apply(ParticleBoundaryStage::Refill, arrays, moments);
 
     EXPECT_EQ((nCellsY2D + 2) * ppc, arrays.stock.size());
+}
+
+// PredictedMoments deposits the temp stock of PredictedRefill: without it (or with one of
+// another time) there is nothing right to deposit, so it stops.
+TEST_F(InflowMoments2D, predictedMomentsNeedsAPredictedRefillAtTheSameTime)
+{
+    Arrays arrays{particleBox};
+    Moments moments{layout};
+    EXPECT_THROW(apply(ParticleBoundaryStage::PredictedMoments, arrays, moments),
+                 std::runtime_error);
+
+    apply(ParticleBoundaryStage::PredictedRefill, arrays, moments, time - 0.01);
+    EXPECT_THROW(apply(ParticleBoundaryStage::PredictedMoments, arrays, moments),
+                 std::runtime_error);
 }
 
 

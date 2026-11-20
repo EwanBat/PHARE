@@ -51,6 +51,7 @@ public:
                 // that land in the patch back to domainParticles.
                 break;
             case ParticleBoundaryStage::Init:
+            case ParticleBoundaryStage::PredictedRefill:
             case ParticleBoundaryStage::Refill: break; // reflective does not act then
         }
     }

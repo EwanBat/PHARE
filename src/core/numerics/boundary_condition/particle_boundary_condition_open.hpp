@@ -66,6 +66,7 @@ public:
                 break;
             }
             case ParticleBoundaryStage::Init:
+            case ParticleBoundaryStage::PredictedRefill:
             case ParticleBoundaryStage::Refill: break; // open does not act then
         }
     }

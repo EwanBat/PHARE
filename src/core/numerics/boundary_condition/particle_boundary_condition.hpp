@@ -37,7 +37,8 @@ enum class ParticleBoundaryConditionType : int {
  *     Init              when the root level is created, or regridded
  *     Moments           then, once the domain particles are deposited
  *     ----              push of copies (domain_only, part 1 of the step)
- *     PredictedMoments  after it, before the border sums
+ *     PredictedRefill   after it
+ *     PredictedMoments  then, before the border sums
  *     ----              real push (all, part 2 of the step)
  *     Refill            after it
  *     Moments           then, before the border sums
@@ -45,17 +46,20 @@ enum class ParticleBoundaryConditionType : int {
  *     Leavers           before the particle exchange (part 2 only)
  *     ----              particle exchange
  *
- * PredictedMoments and Moments both complete the moments at the time of the push. They differ in
- * what the particle arrays hold: after the push of copies, the arrays have not moved (they are
- * still at the start of the step); after the real push, they have.
+ * Both parts of the step do the same thing: refill, then deposit. They differ in what the
+ * particle arrays hold: after the push of copies, the arrays have not moved (they are still at
+ * the start of the step, and the real push needs them so), so the Predicted stages must not
+ * change them; after the real push, they have moved.
  *
  * What each condition does:
  *
  *                     Inflow                  Open                    Reflective
  *     Init            draw the stock          -                       -
- *     PredictedMoments draw a temp stock at   (to decide)             make rho and F symmetric
- *                     the new time, deposit
- *     Refill          redraw the stock        -                       -
+ *     PredictedRefill draw a temp stock at    -                       -
+ *                     the new time
+ *     PredictedMoments deposit the temp stock (to decide)             make rho and F symmetric
+ *     Refill          redraw the stock (from  -                       -
+ *                     the temp stock)
  *     Moments         deposit the stock       deposit the stock       make rho and F symmetric
  *     Leavers         erase the strays        move leavers to stock   mirror leavers, give them back
  *                                             strays → patch ghosts
@@ -66,6 +70,7 @@ enum class ParticleBoundaryConditionType : int {
  */
 enum class ParticleBoundaryStage : int {
     Init,
+    PredictedRefill,
     PredictedMoments,
     Refill,
     Moments,

@@ -201,11 +201,11 @@ private:
     std::unordered_map<int /*level*/, LevelBoxing> boxing;
 
 
-    // the moments of moveIons_ where the particle boundary conditions act, in this order. After
-    // the push of copies (domain_only) the particle arrays have not moved: no Refill, and
-    // PredictedMoments (see core::ParticleBoundaryStage)
+    // the moments of moveIons_ where the particle boundary conditions act, in this order: refill,
+    // then deposit. After the push of copies (domain_only) the particle arrays have not moved, and
+    // must not: the Predicted stages (see core::ParticleBoundaryStage)
     using Stage                               = core::ParticleBoundaryStage;
-    static constexpr std::array afterCopyPush = {Stage::PredictedMoments};
+    static constexpr std::array afterCopyPush = {Stage::PredictedRefill, Stage::PredictedMoments};
     static constexpr std::array afterRealPush = {Stage::Refill, Stage::Moments};
 
 

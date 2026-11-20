@@ -190,11 +190,11 @@ struct Patch
     }
 
     // one step as SolverPPC does it, without the exchange (no neighbour). The push of copies
-    // (domain_only) only deposits moments: it is left out, its PredictedMoments moment is kept
+    // (domain_only) only deposits moments: it is left out, but its PredictedRefill is kept
     // because it draws the stock that Refill then uses.
     void realStep(double const newTime)
     {
-        rule(Stage::PredictedMoments, newTime);
+        rule(Stage::PredictedRefill, newTime);
         IonUpdater_t updater{dict["simulation"]["algo"]["ion_updater"]};
         updater.updatePopulations(ions, em, boxing, dt, UpdaterMode::all);
         rule(Stage::Refill, newTime);
